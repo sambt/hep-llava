@@ -117,27 +117,56 @@ def try_load_omnijet_model(omnijet_dir: Path, checkpoint_path: Path, device: str
     """Attempt to load OmniJet-alpha VQ-VAE model.
 
     Returns the model if successful, None if import/loading fails.
+
+    The OmniJet-alpha repo uses the `gabbro` package internally. We add the
+    repo root to sys.path so that ``import gabbro`` resolves correctly even
+    without a pip-install step.
     """
+    # Make gabbro importable from the cloned repo
+    omnijet_str = str(omnijet_dir)
+    if omnijet_str not in sys.path:
+        sys.path.insert(0, omnijet_str)
+
     try:
         from gabbro.models.vqvae import VQVAELightning
         from omegaconf import OmegaConf
 
         print(f"Loading OmniJet-alpha VQ-VAE from {checkpoint_path}...")
-        model = VQVAELightning.load_from_checkpoint(str(checkpoint_path))
+        model = VQVAELightning.load_from_checkpoint(
+            str(checkpoint_path), map_location=device
+        )
         model = model.to(device)
         model.eval()
 
-        # Load preprocessing config
+        # Load preprocessing config from the checkpoint directory.
+        # The config.yaml lives alongside model_ckpt.ckpt and records the exact
+        # feature_dict used during training (log-transform for pt, scale for eta/phi).
         config_path = checkpoint_path.parent / "config.yaml"
         if config_path.exists():
             cfg = OmegaConf.load(config_path)
             pp_dict = OmegaConf.to_container(cfg.data.dataset_kwargs_common.feature_dict)
         else:
-            # Default pp_dict for the 8192-token VQ-VAE
+            # Hardcoded defaults matching the released 8192-token VQ-VAE checkpoint:
+            #   part_pt   : preprocessed as  np.log(pt_rel) - 1.8   (input = raw pt_rel)
+            #   part_etarel: preprocessed as  3 * eta_rel            (cut at +-0.8)
+            #   part_phirel: preprocessed as  3 * phi_rel            (cut at +-0.8)
             pp_dict = {
-                "part_pt": {"multiply_by": 1, "subtract_by": 1.8, "func": "np.log", "inv_func": "np.exp"},
-                "part_etarel": {"multiply_by": 3, "larger_than": -0.8, "smaller_than": 0.8},
-                "part_phirel": {"multiply_by": 3, "larger_than": -0.8, "smaller_than": 0.8},
+                "part_pt": {
+                    "multiply_by": 1,
+                    "subtract_by": 1.8,
+                    "func": "np.log",
+                    "inv_func": "np.exp",
+                },
+                "part_etarel": {
+                    "multiply_by": 3,
+                    "larger_than": -0.8,
+                    "smaller_than": 0.8,
+                },
+                "part_phirel": {
+                    "multiply_by": 3,
+                    "larger_than": -0.8,
+                    "smaller_than": 0.8,
+                },
             }
 
         print("OmniJet-alpha VQ-VAE loaded successfully!")
@@ -259,26 +288,39 @@ def _tokenize_with_omnijet(
 ) -> np.ndarray:
     """Tokenize jets using OmniJet-alpha VQ-VAE.
 
-    This uses the VQVAELightning.forward() method directly on preprocessed
-    features, returning the codebook indices.
+    Uses ``VQVAELightning.tokenize_ak_array`` which internally handles the
+    preprocessing defined in ``pp_dict`` (log transform, scaling, cuts) and
+    returns codebook indices via the VQ layer.
+
+    Input features are RAW (un-preprocessed) particle kinematics:
+        features_batch[b, :, 0] = pt_rel   (relative pT, i.e. part_pt / jet_pt)
+        features_batch[b, :, 1] = eta_rel  (relative pseudorapidity)
+        features_batch[b, :, 2] = phi_rel  (relative azimuthal angle)
+
+    The preprocessing applied internally by gabbro for the 8192-token model:
+        part_pt      -> np.log(pt_rel) - 1.8   (field must be named 'part_pt')
+        part_etarel  -> 3 * eta_rel             (particles outside ±0.8 are removed)
+        part_phirel  -> 3 * phi_rel             (particles outside ±0.8 are removed)
 
     Args:
-        features_batch: [B, N, 3] array of (pt_rel, eta_rel, phi_rel).
-        masks_batch: [B, N] boolean mask.
-        model: VQVAELightning model.
-        pp_dict: Preprocessing dict.
-        device: Torch device.
+        features_batch: [B, N, 3] array of (pt_rel, eta_rel, phi_rel), raw values.
+        masks_batch: [B, N] boolean mask (True = valid particle).
+        model: Loaded VQVAELightning instance (already on correct device, in eval mode).
+        pp_dict: Preprocessing dict matching the one used during VQ-VAE training.
+        device: Torch device string (not used here since model already placed).
 
     Returns:
-        [B, N] array of codebook indices (int64).
+        [B, N] int64 array of codebook indices in range [0, codebook_size - 1].
+        Padded positions are set to 0.
     """
     import awkward as ak
-    from gabbro.utils.arrays import ak_pad, ak_select_and_preprocess, ak_to_np_stack, np_to_ak
+    from gabbro.utils.arrays import ak_pad
 
     B, N, _ = features_batch.shape
 
-    # Build an awkward array in the format OmniJet expects
-    # (variable-length per jet, named fields: part_pt, part_etarel, part_phirel)
+    # Build a variable-length awkward array with the field names OmniJet expects.
+    # We only pass the valid (unmasked) particles per jet — the tokenize_ak_array
+    # method will apply preprocessing and pad internally.
     jets_list = []
     for b in range(B):
         n_valid = int(masks_batch[b].sum())
@@ -287,14 +329,15 @@ def _tokenize_with_omnijet(
         else:
             feat = features_batch[b, :n_valid]
             jets_list.append({
-                "part_pt": feat[:, 0].tolist(),
-                "part_etarel": feat[:, 1].tolist(),
-                "part_phirel": feat[:, 2].tolist(),
+                "part_pt": feat[:, 0].tolist(),       # raw pt_rel
+                "part_etarel": feat[:, 1].tolist(),   # raw eta_rel
+                "part_phirel": feat[:, 2].tolist(),   # raw phi_rel
             })
 
     ak_arr = ak.Array(jets_list)
 
-    # Use OmniJet's tokenize function
+    # tokenize_ak_array applies pp_dict preprocessing then runs the VQ-VAE forward
+    # pass, returning an awkward array of variable-length integer token sequences.
     tokens_ak = model.tokenize_ak_array(
         ak_arr=ak_arr,
         pp_dict=pp_dict,
@@ -303,14 +346,109 @@ def _tokenize_with_omnijet(
         hide_pbar=True,
     )
 
-    # Convert awkward array back to numpy [B, N]
-    tokens_padded, token_mask = ak_pad(tokens_ak, maxlen=N, return_mask=True)
-    token_indices = tokens_padded.to_numpy().astype(np.int64)
+    # Pad the variable-length token array to [B, N] and convert to numpy int64.
+    # ak_pad returns a regular padded awkward array; ak.to_numpy makes it a
+    # numpy array. The tokens are stored as float32 in the awkward array but
+    # are integer values — cast explicitly to int64.
+    tokens_padded, _ = ak_pad(tokens_ak, maxlen=N, return_mask=True)
+    token_indices = ak.to_numpy(tokens_padded).astype(np.int64)
 
-    # Apply the original mask
+    # Zero out positions that were padding in the original input
     token_indices[~masks_batch] = 0
 
     return token_indices
+
+
+def tokenize_with_omnijet(
+    features: np.ndarray,
+    masks: np.ndarray,
+    omnijet_dir: Path,
+    checkpoint_path: Path,
+    device: str = "cuda",
+    batch_size: int = 256,
+) -> np.ndarray:
+    """Standalone function: tokenize jets with the OmniJet-alpha VQ-VAE.
+
+    This is the primary public API for OmniJet tokenization. It handles model
+    loading and sys.path setup internally, making it easy to call from outside
+    the full pipeline.
+
+    The VQ-VAE checkpoint at ``checkpoint_path`` must be the released
+    ``vqvae_8192_tokens/model_ckpt.ckpt``, with its companion ``config.yaml``
+    in the same directory (used to load the preprocessing dict).
+
+    Preprocessing applied internally (matching the released model):
+        part_pt      -> np.log(pt_rel) - 1.8
+        part_etarel  -> 3 * eta_rel  (particles with |eta_rel| >= 0.8 removed)
+        part_phirel  -> 3 * phi_rel  (particles with |phi_rel| >= 0.8 removed)
+
+    Args:
+        features: [B, N, 3] float32 array of RAW particle features:
+            [:, :, 0] = pt_rel   (particle pT / jet pT)
+            [:, :, 1] = eta_rel  (relative pseudorapidity)
+            [:, :, 2] = phi_rel  (relative azimuthal angle)
+        masks: [B, N] bool array, True where particle slot is valid.
+        omnijet_dir: Path to the cloned OmniJet-alpha repository root.
+            ``gabbro`` package is imported from here.
+        checkpoint_path: Path to the VQ-VAE .ckpt file.
+        device: Torch device string ('cuda', 'cpu', 'cuda:0', …).
+        batch_size: Batch size for VQ-VAE forward passes.
+
+    Returns:
+        [B, N] int64 numpy array of codebook indices in [0, 8191].
+        Padded/invalid positions contain 0.
+    """
+    # Ensure gabbro is importable from the cloned repo
+    omnijet_str = str(omnijet_dir)
+    if omnijet_str not in sys.path:
+        sys.path.insert(0, omnijet_str)
+
+    from gabbro.models.vqvae import VQVAELightning
+    from omegaconf import OmegaConf
+
+    # Load model
+    model = VQVAELightning.load_from_checkpoint(
+        str(checkpoint_path), map_location=device
+    )
+    model = model.to(device)
+    model.eval()
+
+    # Load preprocessing dict from checkpoint directory
+    config_path = Path(checkpoint_path).parent / "config.yaml"
+    if config_path.exists():
+        cfg = OmegaConf.load(config_path)
+        pp_dict = OmegaConf.to_container(cfg.data.dataset_kwargs_common.feature_dict)
+    else:
+        pp_dict = {
+            "part_pt": {
+                "multiply_by": 1,
+                "subtract_by": 1.8,
+                "func": "np.log",
+                "inv_func": "np.exp",
+            },
+            "part_etarel": {
+                "multiply_by": 3,
+                "larger_than": -0.8,
+                "smaller_than": 0.8,
+            },
+            "part_phirel": {
+                "multiply_by": 3,
+                "larger_than": -0.8,
+                "smaller_than": 0.8,
+            },
+        }
+
+    B, N, _ = features.shape
+    all_tokens = []
+
+    with torch.no_grad():
+        for i in range(0, B, batch_size):
+            batch_feat = features[i : i + batch_size]
+            batch_mask = masks[i : i + batch_size]
+            tokens = _tokenize_with_omnijet(batch_feat, batch_mask, model, pp_dict, device)
+            all_tokens.append(tokens)
+
+    return np.concatenate(all_tokens, axis=0)
 
 
 # ============================================================================
@@ -410,7 +548,8 @@ def tokenize_all_jets(
 
             # Extract truth-level particle info if available (JetClass-II)
             if "aux_genpart_pt" in jet_data:
-                metadata["aux_genpart_pt"] = jet_data["aux_genpart_pt"]
+                val = jet_data["aux_genpart_pt"]
+                metadata["aux_genpart_pt"] = val.tolist() if hasattr(val, "tolist") else list(val)
 
             class_metadata.append(metadata)
 

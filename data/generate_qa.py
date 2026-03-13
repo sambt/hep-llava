@@ -199,7 +199,7 @@ def _answer_constituent_count(jet_meta: dict) -> str:
 
 def _answer_is_qcd(jet_meta: dict) -> str:
     cls = jet_meta["class"]
-    if cls == "QCD":
+    if cls.startswith("QCD"):
         return (
             "This is a QCD jet, initiated by a light quark or gluon. "
             "It does not originate from the decay of a heavy resonance."
@@ -227,7 +227,7 @@ def _answer_prong_count(jet_meta: dict) -> str:
 
 def _answer_has_b_quarks(jet_meta: dict) -> str:
     cls = jet_meta["class"]
-    b_classes = {"Hbb", "Tbqq", "Tbl"}
+    b_classes = {"Hbb", "Tbqq", "Tbl", "Res2P_bb"}
     if cls in b_classes:
         return f"Yes, this jet contains b quarks in its decay chain ({CLASS_INFO[cls]['process']})."
     else:
@@ -359,7 +359,7 @@ def _answer_compare_to_qcd(jet_meta: dict) -> str:
     tau2 = jet_meta.get("jet_tau2", 0)
     tau21 = tau2 / max(tau1, 1e-8)
 
-    if cls == "QCD":
+    if cls.startswith("QCD"):
         return (
             f"This is actually a QCD jet. It has a mass of {mass:.1f} GeV and τ₂/τ₁ = {tau21:.3f}. "
             "QCD jets typically have low mass and high τ₂/τ₁ (close to 1), indicating no clear substructure."
@@ -386,13 +386,13 @@ def _answer_tagging_features(jet_meta: dict) -> str:
 
     features = ["Jet mass (soft-drop groomed)", "N-subjettiness ratios (τ₂/τ₁, τ₃/τ₂)"]
 
-    if cls in {"Hbb", "Tbqq", "Tbl"}:
+    if cls in {"Hbb", "Tbqq", "Tbl", "Res2P_bb"}:
         features.append("b-tagging information (displaced vertices, impact parameters)")
-    if cls in {"H4q", "Tbqq"}:
-        features.append("τ₃/τ₂ for three-prong vs two-prong discrimination")
-    if cls in {"Hqql", "Tbl"}:
+    if cls in {"H4q", "Tbqq", "Res2P_WW4q", "Res2P_ZZ4q"}:
+        features.append("τ₃/τ₂ for four-prong vs two-prong discrimination")
+    if cls in {"Hqql", "Tbl", "Res2P_WWlv"}:
         features.append("Lepton identification within the jet")
-    if cls == "Hcc":
+    if cls in {"Hcc", "Res2P_cc"}:
         features.append("c-tagging (charm hadron identification)")
 
     features_str = "\n".join(f"- {f}" for f in features)
@@ -418,6 +418,17 @@ def _answer_describe_topology(jet_meta: dict) -> str:
         "Tbqq": "The top quark decays to a b quark and a W boson, which then decays hadronically (W→qq'). This creates a three-prong structure: b-jet + two light jets.",
         "Tbl": "The top quark decays to a b quark and a W boson, which then decays leptonically (W→ℓν). The jet contains a b-subjet plus leptonic activity.",
         "QCD": "This is a QCD jet from a light quark or gluon. The parton undergoes a cascade of gluon emissions and hadronization, producing a roughly conical spray of particles with no distinct prong structure.",
+        # New JetClass-II resonance classes
+        "Res2P_bb": "A generic heavy resonance X decays to a bb̄ pair. Both b quarks hadronize, forming two subjets inside the fat jet. The b-hadrons leave displaced tracks detectable as secondary vertices.",
+        "Res2P_cc": "A generic heavy resonance X decays to a cc̄ pair. The charm quarks produce two subjets with softer displaced vertices compared to the bb̄ channel.",
+        "Res2P_ss": "A generic heavy resonance X decays to an ss̄ pair. Strange quarks form a two-prong structure, though lighter and harder to distinguish from generic QCD than b or c quarks.",
+        "Res2P_uu": "A generic heavy resonance X decays to a uū pair. Up quarks produce a clean two-prong topology, but with no heavy-flavor tags to aid discrimination from QCD.",
+        "Res2P_gg": "A generic heavy resonance X decays to two gluons. Each gluon showers broadly, creating a two-pronged but somewhat diffuse substructure that is challenging to separate from QCD.",
+        "Res2P_WW4q": "A generic heavy resonance X decays to two W bosons, each decaying hadronically (W→qq'). The result is four quarks and a complex four-prong substructure inside the fat jet.",
+        "Res2P_WWlv": "A generic heavy resonance X decays to two W bosons: one decays hadronically (qq') and one leptonically (ℓν). The jet has a three-prong-like topology with leptonic activity mixed in.",
+        "Res2P_ZZ4q": "A generic heavy resonance X decays to two Z bosons, each decaying to a quark-antiquark pair. Similar to the WW→4q channel but with Z-boson kinematics, creating a four-prong substructure.",
+        "QCD_187": "This is a QCD jet (sub-type label 187) from a light quark or gluon. The parton undergoes a QCD parton shower and hadronization, producing a roughly conical spray with no heavy-resonance substructure.",
+        "QCD_185": "This is a QCD jet (sub-type label 185) from a light quark or gluon. Like all QCD jets, it lacks distinct prong structure and has low soft-drop mass, serving as the dominant background to resonance searches.",
     }
 
     return topologies.get(cls, f"This jet originates from {info['process']}.")

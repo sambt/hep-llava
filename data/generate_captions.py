@@ -80,7 +80,7 @@ def generate_rule_based_caption(jet_meta: dict) -> str:
         "particle": info["particle"],
         "decay": info["decay"],
         "process": info["process"],
-        "decay_clause": f"to {info['decay']}" if cls != "QCD" else "",
+        "decay_clause": f"to {info['decay']}" if not (cls == "QCD" or cls.startswith("QCD_")) else "",
         "n_prong": info["n_prongs"],
         "jet_pt": jet_meta.get("jet_pt", 0),
         "jet_eta": jet_meta.get("jet_eta", 0),
@@ -96,7 +96,8 @@ def generate_rule_based_caption(jet_meta: dict) -> str:
 
     # Filter templates appropriate for this class
     templates = RULE_BASED_TEMPLATES.copy()
-    if cls == "QCD":
+    is_qcd = cls == "QCD" or cls.startswith("QCD_")
+    if is_qcd:
         # Use QCD-specific template
         templates = [t for t in templates if "QCD" in t or "{process}" in t]
     else:

@@ -18,32 +18,35 @@ env:
 # Dataset
 dataset:
   name: "jet-universe/jetclass2"
-  num_jets_per_class: 500
+  num_jets_per_class: 3000
   max_constituents: 128
+  # 10 classes selected from JetClass-II (arxiv:2405.12972)
+  # 8 Res2P resonance classes (from Res2P_0000.parquet, ~7000-7700 jets per label)
+  # 2 QCD classes (from QCD_0000.parquet, most common sub-types)
   classes:
-    - Hbb    # H -> bb
-    - Hcc    # H -> cc
-    - Hgg    # H -> gg
-    - H4q    # H -> 4q (via WW*/ZZ*)
-    - Hqql   # H -> qqlv (via WW*/ZZ*)
-    - Zqq    # Z -> qq
-    - Wqq    # W -> qq'
-    - Tbqq   # t -> bqq'
-    - Tbl    # t -> blv
-    - QCD    # q/g jets
+    - Res2P_bb      # X -> bb (label 0)
+    - Res2P_cc      # X -> cc (label 1)
+    - Res2P_ss      # X -> ss (label 2)
+    - Res2P_uu      # X -> uu (label 4)
+    - Res2P_gg      # X -> gg (label 5)
+    - Res2P_WW4q    # X -> WW -> qqqq (label 6, 4-prong)
+    - Res2P_WWlv    # X -> WW -> qqlv (label 7, 3-prong semi-leptonic)
+    - Res2P_ZZ4q    # X -> ZZ -> qqqq (label 9, 4-prong)
+    - QCD_187       # QCD generic (label 187, most common, 59442 available)
+    - QCD_185       # QCD sub-type (label 185, 13847 available)
 
 # OmniJet-alpha VQ-VAE tokenizer
 tokenizer:
   repo_url: "https://github.com/uhh-pd-ml/omnijet_alpha.git"
-  codebook_size: 32768  # 32^3 for simple discretization fallback
-  # Checkpoint will be downloaded/found after cloning the repo
-  # The exact path depends on the repo structure — the setup script will locate it
+  codebook_size: 8192  # VQVAENormFormer with num_codes=8192 (released checkpoint)
+  # Preprocessing: part_pt -> log(pt_rel)-1.8; part_etarel -> 3*eta_rel (cut ±0.8);
+  #                part_phirel -> 3*phi_rel (cut ±0.8)
   checkpoint_path: "/n/holystore01/LABS/iaifi_lab/Users/sambt/hep-llava-data/omnijet_alpha/checkpoints/vqvae_8192_tokens/model_ckpt.ckpt"
   input_features: ["pt_rel", "eta_rel", "phi_rel"]
 
 # Physics encoder (transformer over VQ tokens)
 physics_encoder:
-  vocab_size: 32768  # must match tokenizer codebook_size (32^3 simple discretization)
+  vocab_size: 8192  # must match tokenizer.codebook_size (OmniJet VQ-VAE num_codes)
   hidden_dim: 512
   num_layers: 6
   num_heads: 8
@@ -76,7 +79,7 @@ captions:
 # Training Stage 1: Feature Alignment
 stage1:
   learning_rate: 1.0e-3
-  batch_size: 8
+  batch_size: 32
   num_epochs: 1
   warmup_ratio: 0.03
   weight_decay: 0.0
@@ -88,7 +91,7 @@ stage1:
 # Training Stage 2: Instruction Tuning
 stage2:
   learning_rate: 2.0e-5
-  batch_size: 4
+  batch_size: 16
   num_epochs: 1
   warmup_ratio: 0.03
   weight_decay: 0.0
@@ -108,7 +111,7 @@ eval:
   batch_size: 32
   max_new_tokens: 256
   temperature: 0.1
-  num_eval_samples_per_class: 50
+  num_eval_samples_per_class: 200
 
 # Logging
 logging:

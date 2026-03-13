@@ -11,7 +11,7 @@ agent teams to parallelize work and manage the multi-stage pipeline.
 ```yaml
 # REQUIRED: Set this to a directory on the cluster with sufficient storage (~100GB)
 # This is where datasets, model weights, checkpoints, and artifacts will be stored.
-data_dir: "__DATA_DIR__"  # <-- SET THIS (e.g., /scratch/user/physllava_data)
+data_dir: "/n/holystore01/LABS/iaifi_lab/Users/sambt/hep-llava-data"  # <-- SET THIS (e.g., /scratch/user/physllava_data)
 ```
 
 Also verify:

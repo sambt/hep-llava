@@ -183,6 +183,146 @@ python -m training.train_stage1 --config configs/default.yaml \
 
 ---
 
+## Inference: Demo and Interactive Chat
+
+Once training is complete, two scripts let you interact with the fine-tuned
+model directly.  Both load the Stage 2 checkpoint and LoRA adapter
+automatically from `{data_dir}` (or you can supply explicit paths).
+
+### Batch demo document (`scripts/demo.py`)
+
+Generates a Markdown file showing the model's answers to a curated set of
+physics questions for a sample of jets.  The output includes each jet's
+ground-truth kinematics alongside the model responses.
+
+```bash
+# One jet per class → writes {data_dir}/demo_output.md
+python -m scripts.demo --config configs/default.yaml --device cuda
+
+# Three jets from selected classes, custom output path
+python -m scripts.demo --config configs/default.yaml \
+    --classes Res2P_bb,Res2P_cc,QCD_187 --n-per-class 3 \
+    --output results/demo.md
+
+# Use a named experiment config
+python -m scripts.demo --config configs/default.yaml \
+    --override configs/experiments/heavy_flavor.yaml \
+    --n-per-class 2
+```
+
+**All flags:**
+
+| Flag | Default | Description |
+|---|---|---|
+| `--config` | `configs/default.yaml` | Base config file |
+| `--override` | *(none)* | Experiment override YAML |
+| `--output` | `{data_dir}/demo_output.md` | Output Markdown path |
+| `--n-per-class` | `1` | Jets to sample per class |
+| `--classes` | *(from config)* | Comma-separated class subset |
+| `--checkpoint` | *(auto-detected)* | Explicit Stage 2 `final.pt` path |
+| `--lora-dir` | *(auto-detected)* | Explicit LoRA adapter directory |
+| `--device` | `cuda` | Torch device |
+| `--max-new-tokens` | `256` | Max tokens per model response |
+| `--temperature` | `0.1` | Sampling temperature |
+| `--seed` | `42` | Random seed for jet selection |
+
+The output looks like:
+
+```markdown
+## Jet 1/10 — `Res2P_bb` (X → bb̄ (bottom quark pair))
+| Property | Value |
+|---|---|
+| pT | 872.3 GeV |
+| Mass (soft-drop) | 124.1 GeV |
+| Constituents | 43 |
+...
+
+**Q:** What physics process produced this jet?
+**A:** This jet was produced by a heavy resonance decaying into a
+bottom quark-antiquark pair (X → bb̄). The two b-quarks each
+hadronise into a subjet, giving the characteristic 2-prong structure...
+```
+
+### Interactive chat (`scripts/chat.py`)
+
+A terminal REPL for asking freeform questions about a single jet.
+The user picks a jet by class or ID; the model sees only its VQ-VAE tokens.
+
+```bash
+# Random jet
+python -m scripts.chat --config configs/default.yaml --device cuda
+
+# Start on a random jet from a specific class
+python -m scripts.chat --config configs/default.yaml --jet-class QCD_187
+
+# Start on a specific jet by ID
+python -m scripts.chat --config configs/default.yaml --jet-id Res2P_bb_00042
+
+# With an experiment override
+python -m scripts.chat --config configs/default.yaml \
+    --override configs/experiments/heavy_flavor.yaml
+```
+
+The session looks like:
+
+```
+═══════════════════════════════════════════════════
+  PhysLLaVA Interactive Chat
+  Type a question about the jet shown below.
+  Commands: /new  /new <class|jet_id>  /info  /suggest  /quit
+═══════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────┐
+│  Jet: Res2P_WW4q_01337                          │
+│  Class: Res2P_WW4q                              │
+│  Physics: X → WW → qqqq (4-prong hadronic)     │
+├─────────────────────────────────────────────────┤
+│  pT                    643.2 GeV                │
+│  Mass (soft-drop)      81.4 GeV                 │
+│  Constituents          67                       │
+│  τ₂/τ₁                0.412                    │
+└─────────────────────────────────────────────────┘
+
+You: What makes this jet unusual compared to a QCD jet?
+PhysLLaVA: This jet shows a characteristic 4-prong structure from
+the X → WW → qqqq decay chain...
+
+You: /new Res2P_bb
+[loads a new Res2P_bb jet and displays its properties]
+
+You: /suggest
+[prints a list of example questions]
+
+You: /quit
+```
+
+**In-session commands:**
+
+| Command | Description |
+|---|---|
+| `/new` | Pick a new random jet |
+| `/new <class>` | Pick a random jet from a class (e.g. `/new QCD_187`) |
+| `/new <jet_id>` | Load a specific jet (e.g. `/new Res2P_bb_00042`) |
+| `/info` | Re-display the current jet's kinematics |
+| `/suggest` | Print example questions to try |
+| `/quit` or `/exit` | Exit |
+
+**All flags:**
+
+| Flag | Default | Description |
+|---|---|---|
+| `--config` | `configs/default.yaml` | Base config file |
+| `--override` | *(none)* | Experiment override YAML |
+| `--jet-id` | *(random)* | Start on a specific jet ID |
+| `--jet-class` | *(random)* | Start on a random jet from this class |
+| `--checkpoint` | *(auto-detected)* | Explicit Stage 2 `final.pt` path |
+| `--lora-dir` | *(auto-detected)* | Explicit LoRA adapter directory |
+| `--device` | `cuda` | Torch device |
+| `--max-new-tokens` | `256` | Max tokens per response |
+| `--temperature` | `0.1` | Sampling temperature |
+
+---
+
 ## Physics Encoder Backends
 
 PhysLLaVA supports two physics encoder backends, selected via `physics_encoder.type`

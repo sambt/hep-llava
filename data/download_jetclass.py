@@ -44,6 +44,17 @@ def _label_to_source_file(label_int: int) -> str:
 # Used by generate_captions.py and generate_qa.py.
 
 _LABEL_PHYSICS: dict[str, dict] = {
+    # --- JetClass-I (original dataset, arxiv:2202.03772) ---
+    "HToBB":     {"particle": "Higgs boson",           "decay": "bb̄",                     "process": "H → bb̄",            "n_prongs": 2},
+    "HToCC":     {"particle": "Higgs boson",           "decay": "cc̄",                     "process": "H → cc̄",            "n_prongs": 2},
+    "HToGG":     {"particle": "Higgs boson",           "decay": "gg",                      "process": "H → gg",             "n_prongs": 2},
+    "HToWW2Q1L": {"particle": "Higgs boson",           "decay": "WW → qqℓν",               "process": "H → WW → qqℓν",     "n_prongs": 3},
+    "HToWW4Q":   {"particle": "Higgs boson",           "decay": "WW → qqqq",               "process": "H → WW → qqqq",     "n_prongs": 4},
+    "TTBar":     {"particle": "top-antitop quark pair","decay": "tt̄ (fully hadronic)",     "process": "pp → tt̄ (had.)",    "n_prongs": 5},
+    "TTBarLep":  {"particle": "top-antitop quark pair","decay": "tt̄ (semi-leptonic)",      "process": "pp → tt̄ (semilep.)","n_prongs": 4},
+    "WToQQ":     {"particle": "W boson",               "decay": "qq̄",                      "process": "W → qq̄",            "n_prongs": 2},
+    "ZJetsToNuNu":{"particle": "Z + jets",             "decay": "νν̄ + jets",               "process": "Z → νν̄ (+ jets)",  "n_prongs": 1},
+    "ZToQQ":     {"particle": "Z boson",               "decay": "qq̄",                      "process": "Z → qq̄",            "n_prongs": 2},
     # --- 2-prong resonances (Res2P) ---
     "X_bb":  {"particle": "heavy resonance X", "decay": "bb̄",          "process": "X → bb̄",  "n_prongs": 2},
     "X_cc":  {"particle": "heavy resonance X", "decay": "cc̄",          "process": "X → cc̄",  "n_prongs": 2},

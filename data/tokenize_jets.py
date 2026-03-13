@@ -514,16 +514,39 @@ def tokenize_all_jets(
     tokenizer_type = "simple_discretization" if use_simple else "omnijet_vqvae"
     print(f"Tokenizer: {tokenizer_type}, codebook size: {codebook_size}")
 
+    # Load class DataFrames from the appropriate source
+    classes = config["dataset"]["classes"]
+    source = config["dataset"].get("source", "jetclass2")
+
+    if source == "jetclass1":
+        from data.load_jetclass1 import load_jetclass1_subset
+        jetclass1_path = config["dataset"].get("jetclass1_path")
+        if not jetclass1_path:
+            raise ValueError(
+                "dataset.jetclass1_path must be set in config when dataset.source='jetclass1'"
+            )
+        split = config["dataset"].get("jetclass1_split", "train")
+        n_jets = config["dataset"].get("num_jets_per_class", 3000)
+        print(f"\nSource: JetClass (v1) — {jetclass1_path} [{split}]")
+        class_dfs = load_jetclass1_subset(jetclass1_path, classes, n_jets, split=split)
+    else:
+        # JetClass-II: read per-class parquet files from jetclass2_subset/
+        class_dfs = {}
+        for cls in classes:
+            parquet_path = input_dir / f"{cls}.parquet"
+            if not parquet_path.exists():
+                print(f"WARNING: {parquet_path} not found, skipping {cls}")
+                continue
+            class_dfs[cls] = pd.read_parquet(parquet_path)
+
     # Process each class
     all_tokenized = []
-    for cls in config["dataset"]["classes"]:
-        parquet_path = input_dir / f"{cls}.parquet"
-        if not parquet_path.exists():
-            print(f"WARNING: {parquet_path} not found, skipping {cls}")
+    for cls in classes:
+        df = class_dfs.get(cls)
+        if df is None:
             continue
 
         print(f"\nProcessing class: {cls}")
-        df = pd.read_parquet(parquet_path)
 
         class_features = []
         class_masks = []
@@ -552,7 +575,7 @@ def tokenize_all_jets(
                 "jet_tau3": float(jet_data.get("jet_tau3", 0)),
             }
 
-            # Extract truth-level particle info if available (JetClass-II)
+            # Extract truth-level particle info if available (JetClass-II only)
             if "aux_genpart_pt" in jet_data:
                 val = jet_data["aux_genpart_pt"]
                 metadata["aux_genpart_pt"] = val.tolist() if hasattr(val, "tolist") else list(val)

@@ -1,0 +1,15 @@
+run_name: "jetclass1_higgs"
+
+dataset:
+  source: "jetclass1"
+  jetclass1_path: "/n/holystore01/LABS/iaifi_lab/Lab/sambt/JetClass"
+  jetclass1_split: "train"
+  num_jets_per_class: 5000
+  classes:
+    - HToBB        # H → bb̄        (2-prong)
+    - HToCC        # H → cc̄        (2-prong)
+    - HToGG        # H → gg        (2-prong)
+    - HToWW4Q      # H → WW → qqqq (4-prong)
+    - HToWW2Q1L    # H → WW → qqℓν (3-prong, semi-leptonic)
+    - WToQQ        # W → qq̄       (2-prong, W baseline)
+    - ZToQQ        # Z → qq̄       (2-prong, Z baseline)

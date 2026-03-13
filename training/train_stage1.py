@@ -18,6 +18,7 @@ from tqdm import tqdm
 
 from model.physllava import PhysLLaVA
 from training.dataset import build_stage1_dataset
+from training.early_stopping import EarlyStopper
 
 
 def train_stage1(config: dict, data_dir: str, device: str = "cuda"):
@@ -42,10 +43,16 @@ def train_stage1(config: dict, data_dir: str, device: str = "cuda"):
     use_wandb = config["logging"].get("use_wandb", False)
     if use_wandb:
         import wandb
+        from scripts.config import get_wandb_run_id
+        run_id = get_wandb_run_id(config)
         wandb.init(
             project=config["logging"]["wandb_project"],
-            name="stage1_alignment",
+            entity=config["logging"].get("wandb_entity") or None,
+            id=run_id,
+            name=config.get("run_name", "default"),
+            resume="allow",
             config=config,
+            tags=["stage1"],
         )
 
     print("=" * 60)
@@ -104,8 +111,19 @@ def train_stage1(config: dict, data_dir: str, device: str = "cuda"):
     warmup_steps = int(total_steps * stage1_cfg.get("warmup_ratio", 0.03))
     scheduler = CosineAnnealingLR(optimizer, T_max=total_steps - warmup_steps)
 
+    # Early stopping
+    stopper = EarlyStopper.from_config(stage1_cfg)
+    if stopper.enabled:
+        es = stage1_cfg.get("early_stopping", {})
+        print(
+            f"Early stopping enabled: patience={stopper.patience} checks, "
+            f"check_every={stopper.check_every_n_steps} steps, "
+            f"min_delta={stopper.min_delta}, min_steps={stopper.min_steps}"
+        )
+
     # Training loop
     global_step = 0
+    stopped_early = False
     for epoch in range(stage1_cfg["num_epochs"]):
         model.train()
         epoch_loss = 0.0
@@ -144,15 +162,22 @@ def train_stage1(config: dict, data_dir: str, device: str = "cuda"):
             num_batches += 1
             global_step += 1
 
-            pbar.set_postfix({"loss": f"{loss.item():.4f}", "lr": f"{optimizer.param_groups[0]['lr']:.2e}"})
+            pbar.set_postfix({
+                "loss": f"{loss.item():.4f}",
+                "ema": f"{stopper.ema:.4f}" if stopper.ema is not None else "n/a",
+                "lr": f"{optimizer.param_groups[0]['lr']:.2e}",
+            })
 
             if use_wandb and global_step % config["logging"].get("log_every_n_steps", 10) == 0:
-                wandb.log({
-                    "train/loss": loss.item(),
-                    "train/lr": optimizer.param_groups[0]["lr"],
-                    "train/epoch": epoch + 1,
-                    "train/global_step": global_step,
-                })
+                log_dict = {
+                    "stage1/loss": loss.item(),
+                    "stage1/lr": optimizer.param_groups[0]["lr"],
+                    "stage1/epoch": epoch + 1,
+                    "stage1/global_step": global_step,
+                }
+                if stopper.ema is not None:
+                    log_dict["stage1/loss_ema"] = stopper.ema
+                wandb.log(log_dict)
 
             # Save checkpoint periodically
             save_every = config["logging"].get("save_every_n_steps", 500)
@@ -168,8 +193,22 @@ def train_stage1(config: dict, data_dir: str, device: str = "cuda"):
                 }, ckpt_path)
                 print(f"\nSaved checkpoint to {ckpt_path}")
 
+            # Early stopping check
+            if stopper.update(loss.item(), global_step):
+                print(f"\nEarly stopping at step {global_step}. {stopper.status()}")
+                stopped_early = True
+                break
+
         avg_loss = epoch_loss / max(num_batches, 1)
         print(f"Epoch {epoch + 1} average loss: {avg_loss:.4f}")
+        if use_wandb:
+            wandb.log({
+                "stage1/epoch_avg_loss": avg_loss,
+                "stage1/epoch": epoch + 1,
+            })
+
+        if stopped_early:
+            break
 
     # Save final checkpoint
     final_path = checkpoint_dir / "final.pt"

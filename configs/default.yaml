@@ -17,6 +17,16 @@ env:
 
 # Dataset
 dataset:
+  # ── Source selection ────────────────────────────────────────────────────────
+  # "jetclass2" (default): downloads from HuggingFace (jet-universe/jetclass2)
+  # "jetclass1": reads from locally downloaded ROOT files (JetClass, arxiv:2202.03772)
+  source: "jetclass2"
+
+  # Required when source=jetclass1: path to JetClass root dir
+  # (the directory that contains train_100M/, val_5M/, test_20M/)
+  jetclass1_path: null
+  jetclass1_split: "train"   # "train", "val", or "test"
+
   name: "jet-universe/jetclass2"
   num_jets_per_class: 3000
   max_constituents: 128
@@ -80,19 +90,26 @@ captions:
 stage1:
   learning_rate: 1.0e-3
   batch_size: 32
-  num_epochs: 1
+  num_epochs: 5
   warmup_ratio: 0.03
   weight_decay: 0.0
   max_grad_norm: 1.0
   # Freeze: LLM, VQ-VAE tokenizer
   # Train: physics_encoder + projector
   dataloader_num_workers: 4
+  early_stopping:
+    enabled: true
+    patience: 5           # stop after 5 checks with no improvement
+    min_delta: 0.001      # minimum EMA loss drop to count as progress
+    check_every_n_steps: 200
+    ema_alpha: 0.05       # slow smoothing — each step contributes 5% to EMA
+    min_steps: 500        # don't check during warmup noise
 
 # Training Stage 2: Instruction Tuning
 stage2:
   learning_rate: 2.0e-5
   batch_size: 16
-  num_epochs: 1
+  num_epochs: 5
   warmup_ratio: 0.03
   weight_decay: 0.0
   max_grad_norm: 1.0
@@ -105,6 +122,13 @@ stage2:
     target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
   gradient_checkpointing: true
   dataloader_num_workers: 4
+  early_stopping:
+    enabled: true
+    patience: 5
+    min_delta: 0.001
+    check_every_n_steps: 100  # Stage 2 has fewer optimizer steps (grad accum=4)
+    ema_alpha: 0.05
+    min_steps: 200
 
 # Evaluation
 eval:
@@ -115,7 +139,9 @@ eval:
 
 # Logging
 logging:
-  use_wandb: false
+  use_wandb: true
   wandb_project: "physllava"
+  wandb_entity: null          # W&B team/username; null = use default entity
+  # wandb_run_id: null        # Override the W&B run ID (default: derived from run_name)
   log_every_n_steps: 10
   save_every_n_steps: 500

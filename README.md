@@ -74,7 +74,7 @@ If `token_set_name` is `null` in the config (the default), it is automatically
 derived from the sorted class list and the tokenizer type:
 
 ```
-QCD_Hbb_Hcc  +  "omnijet_vqvae"  →  "Hbb_Hcc_QCD__omnijet_vqvae"
+X_bb_X_cc  +  "omnijet_vqvae"  →  "X_bb_X_cc__omnijet_vqvae"
 ```
 
 Classes are sorted for stability so that the same physical dataset always maps
@@ -106,9 +106,9 @@ All scripts accept `--override path/to/override.yaml`.  The override is
 run_name: "my_experiment"
 dataset:
   classes:         # list → replaces the default 10-class list entirely
-    - Hbb
-    - Hcc
-    - QCD
+    - X_bb
+    - X_cc
+    - QCD_light
 stage1:
   num_epochs: 10   # scalar → overrides default
 ```
@@ -147,10 +147,10 @@ as a shorthand for overriding `dataset.classes` without writing an override file
 
 ```bash
 python -m data.download_jetclass --config configs/default.yaml \
-    --classes Hbb,Hcc,QCD
+    --classes X_bb,X_cc,QCD_light
 
 python -m data.tokenize_jets --config configs/default.yaml \
-    --classes Hbb,Hcc,QCD
+    --classes X_bb,X_cc,QCD_light
 ```
 
 The `token_set_name` is re-derived from the new class list automatically.
@@ -175,11 +175,128 @@ python -m training.train_stage1 --config configs/default.yaml \
 
 ### Provided experiment configs
 
-| File | run_name | Description |
-|------|----------|-------------|
-| `configs/experiments/heavy_flavor.yaml` | `heavy_flavor` | Res2P_bb/cc + QCD_187/185 |
-| `configs/experiments/omnijet_foundation.yaml` | `omnijet_foundation` | Frozen OmniJet backbone |
-| `configs/experiments/full_res2p.yaml` | `full_res2p` | All Res2P classes + QCD |
+| File | run_name | Dataset | Description |
+|------|----------|---------|-------------|
+| `configs/experiments/heavy_flavor.yaml` | `heavy_flavor` | JetClass-II | X_bb, X_cc, QCD_ss, QCD_light |
+| `configs/experiments/full_res2p.yaml` | `full_res2p` | JetClass-II | All 8 Res2P classes + 2 QCD |
+| `configs/experiments/omnijet_foundation.yaml` | `omnijet_foundation` | JetClass-II | Frozen OmniJet backbone |
+| `configs/experiments/jetclass1_higgs.yaml` | `jetclass1_higgs` | JetClass (v1) | 5 Higgs + W + Z classes |
+| `configs/experiments/jetclass1_full.yaml` | `jetclass1_full` | JetClass (v1) | All 10 JetClass-I classes |
+
+---
+
+## Dataset Sources
+
+PhysLLaVA supports two jet datasets.  Select between them with `dataset.source`
+in your config or override YAML.
+
+### JetClass-II (`source: "jetclass2"`, default)
+
+**JetClass-II** (arxiv:2405.12972) is downloaded on demand from HuggingFace
+(`jet-universe/jetclass2`).  It uses a new class taxonomy with 188 fine-grained
+labels, identified by official string names such as `X_bb`, `X_cc`, `QCD_light`.
+
+- Requires a HuggingFace token (set `HF_TOKEN` env var).
+- Run `python -m data.download_jetclass` before tokenizing.
+- Class names come from `data/jetclass_labels.py`.
+
+Default 10-class selection (set in `configs/default.yaml`):
+
+| Class | Label | Process |
+|-------|-------|---------|
+| `X_bb` | 0 | X → bb̄ |
+| `X_cc` | 1 | X → cc̄ |
+| `X_ss` | 2 | X → ss̄ |
+| `X_bc` | 4 | X → bc̄ |
+| `X_cs` | 5 | X → cs̄ |
+| `X_bq` | 6 | X → bq̄ |
+| `X_cq` | 7 | X → cq̄ |
+| `X_gg` | 9 | X → gg |
+| `QCD_ss` | 185 | QCD (ss̄) |
+| `QCD_light` | 187 | QCD multijet |
+
+### JetClass (`source: "jetclass1"`)
+
+**JetClass** (arxiv:2202.03772) is the original 10-class dataset, stored locally
+as ROOT files.  No download step is needed — point `jetclass1_path` at the
+directory that contains `train_100M/`, `val_5M/`, and `test_20M/`.
+
+- **No HuggingFace token required.**
+- **No download step** — data is read directly from the ROOT files.
+- Class names match the ROOT file prefixes exactly.
+
+Available classes:
+
+| Class | Process | Prongs |
+|-------|---------|--------|
+| `HToBB` | H → bb̄ | 2 |
+| `HToCC` | H → cc̄ | 2 |
+| `HToGG` | H → gg | 2 |
+| `HToWW2Q1L` | H → WW → qqℓν | 3 |
+| `HToWW4Q` | H → WW → qqqq | 4 |
+| `TTBar` | tt̄ (fully hadronic) | 5 |
+| `TTBarLep` | tt̄ (semi-leptonic) | 4 |
+| `WToQQ` | W → qq̄ | 2 |
+| `ZJetsToNuNu` | Z → νν̄ + jets | 1 |
+| `ZToQQ` | Z → qq̄ | 2 |
+
+### Switching between datasets
+
+The key config fields to set when using JetClass (v1):
+
+```yaml
+# Required
+dataset:
+  source: "jetclass1"
+  jetclass1_path: "/path/to/JetClass"   # dir containing train_100M/, val_5M/, test_20M/
+  jetclass1_split: "train"              # "train", "val", or "test"
+  num_jets_per_class: 5000
+  classes:
+    - HToBB
+    - HToCC
+    - WToQQ
+    - ZToQQ
+```
+
+Because the data is already local, the download step is skipped entirely —
+go straight to tokenization:
+
+```bash
+# JetClass-II workflow (download first)
+python -m data.download_jetclass --config configs/default.yaml \
+    --override configs/experiments/heavy_flavor.yaml
+python -m data.tokenize_jets     --config configs/default.yaml \
+    --override configs/experiments/heavy_flavor.yaml --device cuda
+
+# JetClass (v1) workflow (no download needed)
+python -m data.tokenize_jets     --config configs/default.yaml \
+    --override configs/experiments/jetclass1_higgs.yaml --device cuda
+```
+
+The rest of the pipeline (caption generation, training, evaluation) is
+identical for both sources.
+
+### Full JetClass (v1) run
+
+Use the provided experiment configs as starting points:
+
+```bash
+OVERRIDE=configs/experiments/jetclass1_higgs.yaml
+
+python -m data.tokenize_jets    --config configs/default.yaml --override $OVERRIDE --device cuda
+python -m data.generate_captions --config configs/default.yaml --override $OVERRIDE
+python -m data.generate_qa      --config configs/default.yaml --override $OVERRIDE
+python -m training.train_stage1 --config configs/default.yaml --override $OVERRIDE --device cuda
+python -m training.train_stage2 --config configs/default.yaml --override $OVERRIDE --device cuda
+python -m eval.evaluate         --config configs/default.yaml --override $OVERRIDE --device cuda
+```
+
+Or run everything in one shot:
+
+```bash
+python -m scripts.run_pipeline --config configs/default.yaml \
+    --override configs/experiments/jetclass1_higgs.yaml
+```
 
 ---
 
@@ -201,7 +318,7 @@ python -m scripts.demo --config configs/default.yaml --device cuda
 
 # Three jets from selected classes, custom output path
 python -m scripts.demo --config configs/default.yaml \
-    --classes Res2P_bb,Res2P_cc,QCD_187 --n-per-class 3 \
+    --classes X_bb,X_cc,QCD_light --n-per-class 3 \
     --output results/demo.md
 
 # Use a named experiment config
@@ -229,7 +346,7 @@ python -m scripts.demo --config configs/default.yaml \
 The output looks like:
 
 ```markdown
-## Jet 1/10 — `Res2P_bb` (X → bb̄ (bottom quark pair))
+## Jet 1/10 — `X_bb` (X → bb̄)
 | Property | Value |
 |---|---|
 | pT | 872.3 GeV |
@@ -253,10 +370,10 @@ The user picks a jet by class or ID; the model sees only its VQ-VAE tokens.
 python -m scripts.chat --config configs/default.yaml --device cuda
 
 # Start on a random jet from a specific class
-python -m scripts.chat --config configs/default.yaml --jet-class QCD_187
+python -m scripts.chat --config configs/default.yaml --jet-class QCD_light
 
 # Start on a specific jet by ID
-python -m scripts.chat --config configs/default.yaml --jet-id Res2P_bb_00042
+python -m scripts.chat --config configs/default.yaml --jet-id X_bb_00042
 
 # With an experiment override
 python -m scripts.chat --config configs/default.yaml \
@@ -273,9 +390,9 @@ The session looks like:
 ═══════════════════════════════════════════════════
 
 ┌─────────────────────────────────────────────────┐
-│  Jet: Res2P_WW4q_01337                          │
-│  Class: Res2P_WW4q                              │
-│  Physics: X → WW → qqqq (4-prong hadronic)     │
+│  Jet: HToWW4Q_01337                             │
+│  Class: HToWW4Q                                 │
+│  Physics: H → WW → qqqq (4-prong hadronic)     │
 ├─────────────────────────────────────────────────┤
 │  pT                    643.2 GeV                │
 │  Mass (soft-drop)      81.4 GeV                 │
@@ -287,8 +404,8 @@ You: What makes this jet unusual compared to a QCD jet?
 PhysLLaVA: This jet shows a characteristic 4-prong structure from
 the X → WW → qqqq decay chain...
 
-You: /new Res2P_bb
-[loads a new Res2P_bb jet and displays its properties]
+You: /new X_bb
+[loads a new X_bb jet and displays its properties]
 
 You: /suggest
 [prints a list of example questions]
@@ -301,8 +418,8 @@ You: /quit
 | Command | Description |
 |---|---|
 | `/new` | Pick a new random jet |
-| `/new <class>` | Pick a random jet from a class (e.g. `/new QCD_187`) |
-| `/new <jet_id>` | Load a specific jet (e.g. `/new Res2P_bb_00042`) |
+| `/new <class>` | Pick a random jet from a class (e.g. `/new QCD_light`) |
+| `/new <jet_id>` | Load a specific jet (e.g. `/new X_bb_00042`) |
 | `/info` | Re-display the current jet's kinematics |
 | `/suggest` | Print example questions to try |
 | `/quit` or `/exit` | Exit |

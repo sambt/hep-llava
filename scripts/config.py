@@ -209,6 +209,39 @@ def get_paths(config: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# W&B run ID derivation
+# ---------------------------------------------------------------------------
+
+
+def get_wandb_run_id(config: dict) -> str:
+    """Return a stable W&B run ID for this configuration.
+
+    The ID is derived from ``run_name`` so that Stage 1 and Stage 2 can
+    resume the same W&B run via ``wandb.init(id=..., resume="allow")``.
+
+    An explicit override can be set via ``logging.wandb_run_id`` in the
+    config.  The ID is sanitised to the characters W&B allows (letters,
+    digits, hyphens, underscores; max 128 chars).
+
+    Args:
+        config: Fully loaded configuration dictionary.
+
+    Returns:
+        A W&B-safe run ID string.
+    """
+    import re
+
+    override = config.get("logging", {}).get("wandb_run_id")
+    if override:
+        raw = str(override)
+    else:
+        raw = config.get("run_name", "default")
+
+    sanitised = re.sub(r"[^A-Za-z0-9_\-]", "-", raw)
+    return sanitised[:128]
+
+
+# ---------------------------------------------------------------------------
 # Saving effective config snapshot
 # ---------------------------------------------------------------------------
 

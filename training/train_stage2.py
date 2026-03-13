@@ -17,6 +17,7 @@ from tqdm import tqdm
 
 from model.physllava import PhysLLaVA
 from training.dataset import build_stage2_dataset
+from training.early_stopping import EarlyStopper
 
 
 def train_stage2(
@@ -47,10 +48,16 @@ def train_stage2(
     use_wandb = config["logging"].get("use_wandb", False)
     if use_wandb:
         import wandb
+        from scripts.config import get_wandb_run_id
+        run_id = get_wandb_run_id(config)
         wandb.init(
             project=config["logging"]["wandb_project"],
-            name="stage2_instruction_tuning",
+            entity=config["logging"].get("wandb_entity") or None,
+            id=run_id,
+            name=config.get("run_name", "default"),
+            resume="allow",
             config=config,
+            tags=["stage2"],
         )
 
     print("=" * 60)
@@ -136,8 +143,18 @@ def train_stage2(
     warmup_steps = int(total_steps * stage2_cfg.get("warmup_ratio", 0.03))
     scheduler = CosineAnnealingLR(optimizer, T_max=total_steps - warmup_steps)
 
+    # Early stopping
+    stopper = EarlyStopper.from_config(stage2_cfg)
+    if stopper.enabled:
+        print(
+            f"Early stopping enabled: patience={stopper.patience} checks, "
+            f"check_every={stopper.check_every_n_steps} steps, "
+            f"min_delta={stopper.min_delta}, min_steps={stopper.min_steps}"
+        )
+
     # Training loop
     global_step = 0
+    stopped_early = False
     optimizer.zero_grad()
 
     for epoch in range(stage2_cfg["num_epochs"]):
@@ -180,17 +197,21 @@ def train_stage2(
 
                 pbar.set_postfix({
                     "loss": f"{actual_loss:.4f}",
+                    "ema": f"{stopper.ema:.4f}" if stopper.ema is not None else "n/a",
                     "lr": f"{optimizer.param_groups[0]['lr']:.2e}",
                 })
 
                 if use_wandb and global_step % config["logging"].get("log_every_n_steps", 10) == 0:
                     import wandb
-                    wandb.log({
-                        "train/loss": actual_loss,
-                        "train/lr": optimizer.param_groups[0]["lr"],
-                        "train/epoch": epoch + 1,
-                        "train/global_step": global_step,
-                    })
+                    log_dict = {
+                        "stage2/loss": actual_loss,
+                        "stage2/lr": optimizer.param_groups[0]["lr"],
+                        "stage2/epoch": epoch + 1,
+                        "stage2/global_step": global_step,
+                    }
+                    if stopper.ema is not None:
+                        log_dict["stage2/loss_ema"] = stopper.ema
+                    wandb.log(log_dict)
 
                 # Save checkpoint periodically
                 save_every = config["logging"].get("save_every_n_steps", 500)
@@ -199,8 +220,23 @@ def train_stage2(
                         model, optimizer, global_step, epoch, config, checkpoint_dir
                     )
 
+                # Early stopping check (against optimizer steps)
+                if stopper.update(actual_loss, global_step):
+                    print(f"\nEarly stopping at step {global_step}. {stopper.status()}")
+                    stopped_early = True
+                    break
+
         avg_loss = epoch_loss / max(num_batches, 1)
         print(f"Epoch {epoch + 1} average loss: {avg_loss:.4f}")
+        if use_wandb:
+            import wandb
+            wandb.log({
+                "stage2/epoch_avg_loss": avg_loss,
+                "stage2/epoch": epoch + 1,
+            })
+
+        if stopped_early:
+            break
 
     # Save final checkpoint
     _save_stage2_checkpoint(

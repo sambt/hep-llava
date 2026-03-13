@@ -10,6 +10,8 @@ datasets>=2.18.0
 pyarrow>=15.0.0
 h5py>=3.10.0
 pandas>=2.2.0
+uproot>=5.0.0      # reading JetClass (v1) ROOT files
+awkward>=2.0.0     # jagged arrays for uproot (already needed by OmniJet-alpha)
 
 # OmniJet-alpha dependencies
 # (will be installed from cloned repo, but core deps listed here)

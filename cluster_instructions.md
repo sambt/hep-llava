@@ -18,6 +18,15 @@ Also verify:
 - `llm.model_name`: Set to a Llama 3.1 8B model you have access to (may need HuggingFace token)
 - `logging.use_wandb`: Set to `true` if wandb is configured, `false` otherwise
 
+**Environment variables (must be set in the shell):**
+- `HF_TOKEN` — HuggingFace token for gated model access (Llama 3.1)
+- `OPENROUTER_API_KEY` — OpenRouter API key for LLM-generated captions (Strategy 2)
+
+The env var names are configurable via `env.hf_token_var` and `env.openrouter_token_var`
+in the config. All enterprise LLM inference (caption generation) goes through OpenRouter
+via `data/llm_client.py`. If `OPENROUTER_API_KEY` is not set, LLM captions are skipped
+gracefully — Strategies 1 and 3 still produce plenty of training data.
+
 ---
 
 ## Orchestration Architecture
@@ -145,12 +154,12 @@ wait
 - `qa_data.json` (~360K QA conversations)
 - `qa_factual.json`, `qa_kinematic.json`, `qa_reasoning.json` (split by level)
 
-**Optional — LLM-generated captions (Strategy 2):**
-If you want to generate richer captions via an LLM, create a script that:
-1. Formats jet metadata into structured prompts
-2. Calls an LLM API (Claude or a locally-served model) to generate diverse captions
-3. Saves results in the same JSON format
-This is an enhancement and not required for the initial demonstrator.
+**LLM-generated captions (Strategy 2):**
+If `OPENROUTER_API_KEY` is set, `generate_captions.py` automatically calls OpenRouter
+(via `data/llm_client.py`) to generate ~30 rich LLM captions per class using the model
+specified in `captions.llm_caption_model`. This runs sequentially (one API call per caption)
+so it takes a few minutes. To skip it: `python -m data.generate_captions --skip-llm`.
+All LLM inference for data generation goes through OpenRouter — never direct provider APIs.
 
 ### Phase 2: Training Stage 1 (Feature Alignment)
 
@@ -311,8 +320,9 @@ llava_hep/
 │   ├── __init__.py
 │   ├── download_jetclass.py         # Download JetClass-II subset
 │   ├── tokenize_jets.py             # Tokenize with OmniJet-alpha VQ-VAE
-│   ├── generate_captions.py         # Rule-based + template captions
-│   └── generate_qa.py              # Multi-level QA generation
+│   ├── generate_captions.py         # Rule-based + template + LLM captions
+│   ├── generate_qa.py              # Multi-level QA generation
+│   └── llm_client.py               # OpenRouter LLM client for caption generation
 ├── model/
 │   ├── __init__.py
 │   ├── physics_encoder.py           # Transformer over VQ tokens

@@ -7,6 +7,14 @@
 # ============================================================
 data_dir: "/path/to/your/data/directory"  # <-- CHANGE THIS
 
+# ============================================================
+# API TOKENS — Environment variable names for credentials
+# These env vars must be set in the shell before running.
+# ============================================================
+env:
+  hf_token_var: "HF_TOKEN"            # HuggingFace token (for gated models like Llama 3.1)
+  openrouter_token_var: "OPENROUTER_API_KEY"  # OpenRouter API key (for LLM-generated captions)
+
 # Dataset
 dataset:
   name: "jet-universe/jetclass2"
@@ -61,6 +69,9 @@ captions:
   num_llm_generated_per_class: 30
   qa_pairs_per_jet: 15
   difficulty_levels: ["factual", "kinematic", "reasoning"]
+  # LLM-generated captions (Strategy 2) via OpenRouter
+  llm_caption_model: "anthropic/claude-sonnet-4" # OpenRouter model ID
+  llm_caption_max_tokens: 300
 
 # Training Stage 1: Feature Alignment
 stage1:

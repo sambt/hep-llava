@@ -1,12 +1,13 @@
 """Generate captions for tokenized jets using multiple strategies.
 
 Strategy 1: Rule-based factual captions from truth-level info
-Strategy 2: LLM-generated rich captions (requires API key)
+Strategy 2: LLM-generated rich captions (via OpenRouter)
 Strategy 3: Template-based with slot-filling
 """
 
 import argparse
 import json
+import os
 import random
 from pathlib import Path
 
@@ -14,6 +15,7 @@ import numpy as np
 import yaml
 
 from data.download_jetclass import CLASS_INFO
+from data.llm_client import chat_completion
 
 
 # =============================================================================
@@ -326,6 +328,114 @@ def generate_slot_fill_caption(jet_meta: dict) -> str:
 
 
 # =============================================================================
+# Strategy 2: LLM-generated rich captions (via OpenRouter)
+# =============================================================================
+
+LLM_CAPTION_SYSTEM_PROMPT = """\
+You are a particle physics expert writing natural-language descriptions of \
+particle jets from LHC collisions. Given structured metadata about a jet, \
+write a single paragraph (2-5 sentences) describing it. Vary your language \
+and style — sometimes be technical, sometimes more accessible. Include both \
+qualitative physics interpretation and quantitative details from the metadata. \
+Do NOT use bullet points or lists. Just output the caption text, nothing else."""
+
+
+def _format_jet_for_llm(jet_meta: dict) -> str:
+    """Format jet metadata as a structured prompt for the LLM."""
+    cls = jet_meta["class"]
+    info = CLASS_INFO[cls]
+    tau21 = jet_meta.get("jet_tau2", 0) / max(jet_meta.get("jet_tau1", 1e-8), 1e-8)
+
+    return (
+        f"Jet class: {cls}\n"
+        f"Parent particle: {info['particle']}\n"
+        f"Decay process: {info['process']} ({info['decay']})\n"
+        f"Expected prong structure: {info['n_prongs']}-prong\n"
+        f"Jet pT: {jet_meta.get('jet_pt', 0):.1f} GeV\n"
+        f"Jet eta: {jet_meta.get('jet_eta', 0):.2f}\n"
+        f"Jet energy: {jet_meta.get('jet_energy', 0):.1f} GeV\n"
+        f"Soft-drop mass: {jet_meta.get('jet_sdmass', 0):.1f} GeV\n"
+        f"Number of constituents: {jet_meta.get('jet_nparticles', 0)}\n"
+        f"tau_1: {jet_meta.get('jet_tau1', 0):.4f}\n"
+        f"tau_2: {jet_meta.get('jet_tau2', 0):.4f}\n"
+        f"tau_3: {jet_meta.get('jet_tau3', 0):.4f}\n"
+        f"tau21 ratio: {tau21:.4f}"
+    )
+
+
+def generate_llm_caption(
+    jet_meta: dict,
+    config: dict,
+) -> str | None:
+    """Generate a single LLM caption via OpenRouter.
+
+    Returns None if the API call fails (allows graceful degradation).
+    """
+    caption_cfg = config.get("captions", {})
+    model = caption_cfg.get("llm_caption_model", "anthropic/claude-sonnet-4")
+    max_tokens = caption_cfg.get("llm_caption_max_tokens", 300)
+
+    prompt = _format_jet_for_llm(jet_meta)
+
+    try:
+        return chat_completion(
+            messages=[
+                {"role": "system", "content": LLM_CAPTION_SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            model=model,
+            max_tokens=max_tokens,
+            temperature=0.8,
+            config=config,
+        )
+    except Exception as e:
+        print(f"  LLM caption failed for {jet_meta.get('jet_id', '?')}: {e}")
+        return None
+
+
+def generate_llm_captions_for_class(
+    jets: list[dict],
+    config: dict,
+    num_per_class: int = 30,
+) -> list[dict]:
+    """Generate LLM captions for a sample of jets from one class.
+
+    Args:
+        jets: List of jet metadata dicts (all same class).
+        config: Full config dict.
+        num_per_class: How many LLM captions to generate for this class.
+
+    Returns:
+        List of conversation dicts in LLaVA format.
+    """
+    sampled = random.sample(jets, min(num_per_class, len(jets)))
+    conversations = []
+
+    prompts = [
+        "<jet>\nDescribe this jet in detail.",
+        "<jet>\nWhat can you tell me about this jet?",
+        "<jet>\nProvide a rich description of this particle physics jet.",
+        "<jet>\nAnalyze this jet and describe what you observe.",
+        "<jet>\nDescribe the physics of this jet.",
+    ]
+
+    for jet_meta in sampled:
+        caption = generate_llm_caption(jet_meta, config)
+        if caption:
+            conversations.append({
+                "id": f"{jet_meta['jet_id']}_llm_{len(conversations)}",
+                "jet_id": jet_meta["jet_id"],
+                "conversations": [
+                    {"from": "human", "value": random.choice(prompts)},
+                    {"from": "gpt", "value": caption},
+                ],
+                "caption_type": "llm_generated",
+            })
+
+    return conversations
+
+
+# =============================================================================
 # Caption generation main function
 # =============================================================================
 
@@ -382,6 +492,7 @@ def generate_all_captions(
     data_dir: str,
     config: dict,
     seed: int = 42,
+    skip_llm: bool = False,
 ) -> Path:
     """Generate captions for all tokenized jets.
 
@@ -389,6 +500,7 @@ def generate_all_captions(
         data_dir: Root data directory.
         config: Full config dict.
         seed: Random seed.
+        skip_llm: If True, skip Strategy 2 (LLM-generated captions).
 
     Returns:
         Path to output captions JSON.
@@ -401,6 +513,7 @@ def generate_all_captions(
 
     print(f"Generating captions for {len(all_jets)} jets...")
 
+    # Strategy 1 + 3: Rule-based and slot-fill captions
     all_conversations = []
     for jet_meta in all_jets:
         convos = generate_captions_for_jet(
@@ -410,6 +523,33 @@ def generate_all_captions(
         )
         all_conversations.extend(convos)
 
+    print(f"  Rule-based + slot-fill: {len(all_conversations)} conversations")
+
+    # Strategy 2: LLM-generated captions via OpenRouter
+    if not skip_llm:
+        openrouter_var = config.get("env", {}).get("openrouter_token_var", "OPENROUTER_API_KEY")
+        if os.environ.get(openrouter_var):
+            print("Generating LLM captions via OpenRouter...")
+            num_per_class = config.get("captions", {}).get("num_llm_generated_per_class", 30)
+
+            # Group jets by class
+            jets_by_class: dict[str, list] = {}
+            for j in all_jets:
+                jets_by_class.setdefault(j["class"], []).append(j)
+
+            llm_count = 0
+            for cls, jets in jets_by_class.items():
+                print(f"  Generating LLM captions for {cls}...")
+                llm_convos = generate_llm_captions_for_class(jets, config, num_per_class)
+                all_conversations.extend(llm_convos)
+                llm_count += len(llm_convos)
+
+            print(f"  LLM-generated: {llm_count} conversations")
+        else:
+            print(f"  Skipping LLM captions ({openrouter_var} not set)")
+    else:
+        print("  Skipping LLM captions (--skip-llm flag)")
+
     # Save
     output_dir = Path(data_dir) / "caption_data"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -418,7 +558,7 @@ def generate_all_captions(
     with open(output_path, "w") as f:
         json.dump(all_conversations, f, indent=2)
 
-    print(f"Generated {len(all_conversations)} caption conversations")
+    print(f"Generated {len(all_conversations)} total caption conversations")
     print(f"Saved to {output_path}")
 
     return output_path
@@ -429,13 +569,14 @@ def main():
     parser.add_argument("--config", type=str, default="configs/default.yaml")
     parser.add_argument("--data-dir", type=str, default=None)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--skip-llm", action="store_true", help="Skip LLM-generated captions (Strategy 2)")
     args = parser.parse_args()
 
     with open(args.config) as f:
         config = yaml.safe_load(f)
 
     data_dir = args.data_dir or config["data_dir"]
-    generate_all_captions(data_dir, config, args.seed)
+    generate_all_captions(data_dir, config, args.seed, skip_llm=args.skip_llm)
 
 
 if __name__ == "__main__":

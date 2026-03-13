@@ -1,0 +1,5 @@
+run_name: "omnijet_foundation"
+# token_set_name omitted → auto-derived, will reuse existing tokenized data
+physics_encoder:
+  type: "omnijet_foundation"
+  freeze: true

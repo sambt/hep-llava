@@ -1,0 +1,13 @@
+run_name: "full_res2p"
+dataset:
+  classes:
+    - X_bb       # label 0 — X → bb̄
+    - X_cc       # label 1 — X → cc̄
+    - X_ss       # label 2 — X → ss̄
+    - X_bc       # label 4 — X → bc̄
+    - X_cs       # label 5 — X → cs̄
+    - X_bq       # label 6 — X → bq̄
+    - X_cq       # label 7 — X → cq̄
+    - X_gg       # label 9 — X → gg
+    - QCD_ss     # label 185 — QCD ss̄
+    - QCD_light  # label 187 — QCD multijet

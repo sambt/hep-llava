@@ -28,9 +28,15 @@ def train_stage1(config: dict, data_dir: str, device: str = "cuda"):
         data_dir: Root data directory.
         device: Torch device.
     """
+    from scripts.config import get_paths, save_effective_config
+
     stage1_cfg = config["stage1"]
-    checkpoint_dir = Path(data_dir) / "checkpoints" / "stage1"
+    paths = get_paths(config)
+    checkpoint_dir = paths["stage1_checkpoint_dir"]
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save effective config snapshot to run directory
+    save_effective_config(config, paths)
 
     # Optional wandb logging
     use_wandb = config["logging"].get("use_wandb", False)
@@ -73,7 +79,7 @@ def train_stage1(config: dict, data_dir: str, device: str = "cuda"):
 
     # Build dataset
     print("Building dataset...")
-    dataset = build_stage1_dataset(data_dir, model.tokenizer)
+    dataset = build_stage1_dataset(data_dir, model.tokenizer, paths=paths)
     print(f"Dataset size: {len(dataset)} samples")
 
     dataloader = DataLoader(
@@ -185,14 +191,18 @@ def train_stage1(config: dict, data_dir: str, device: str = "cuda"):
 def main():
     parser = argparse.ArgumentParser(description="PhysLLaVA Stage 1 Training")
     parser.add_argument("--config", type=str, default="configs/default.yaml")
+    parser.add_argument("--override", type=str, default=None, help="Path to an override YAML config")
     parser.add_argument("--data-dir", type=str, default=None)
     parser.add_argument("--device", type=str, default="cuda")
     args = parser.parse_args()
 
-    with open(args.config) as f:
-        config = yaml.safe_load(f)
+    from scripts.config import load_config
 
-    data_dir = args.data_dir or config["data_dir"]
+    config = load_config(args.config, args.override)
+    if args.data_dir is not None:
+        config["data_dir"] = args.data_dir
+
+    data_dir = config["data_dir"]
     train_stage1(config, data_dir, args.device)
 
 

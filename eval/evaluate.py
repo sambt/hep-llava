@@ -35,16 +35,16 @@ PROCESS_ID_PROMPTS = [
 ]
 
 CLASS_KEYWORDS = {
-    "Hbb": ["higgs", "h →", "h->", "hbb", "h → bb", "bb̄", "bottom"],
-    "Hcc": ["higgs", "hcc", "h → cc", "cc̄", "charm"],
-    "Hgg": ["higgs", "hgg", "h → gg", "gluon", "h to gg"],
-    "H4q": ["higgs", "h4q", "h → 4q", "ww*", "zz*", "four quark"],
-    "Hqql": ["higgs", "hqql", "h → qq", "lepton", "neutrino", "qqℓν"],
-    "Zqq": ["z boson", "zqq", "z →", "z->"],
-    "Wqq": ["w boson", "wqq", "w →", "w->"],
-    "Tbqq": ["top", "tbqq", "t →", "t->", "hadronic", "bqq"],
-    "Tbl": ["top", "tbl", "leptonic", "bℓν", "blv"],
-    "QCD": ["qcd", "light quark", "gluon jet", "q/g"],
+    "X_bb":      ["x → bb", "bb̄", "bottom", "x_bb", "bottom quark pair"],
+    "X_cc":      ["x → cc", "cc̄", "charm", "x_cc", "charm quark pair"],
+    "X_ss":      ["x → ss", "ss̄", "strange", "x_ss", "strange quark pair"],
+    "X_bc":      ["x → bc", "bc̄", "bottom-charm", "x_bc"],
+    "X_cs":      ["x → cs", "cs̄", "charm-strange", "x_cs"],
+    "X_bq":      ["x → bq", "bq̄", "bottom-light", "x_bq"],
+    "X_cq":      ["x → cq", "cq̄", "charm-light", "x_cq"],
+    "X_gg":      ["x → gg", "gluon pair", "x_gg", "two gluon"],
+    "QCD_ss":    ["qcd", "strange quark", "ss̄", "qcd_ss"],
+    "QCD_light": ["qcd", "light quark", "gluon jet", "q/g", "qcd_light", "multijet"],
 }
 
 
@@ -260,8 +260,11 @@ def run_evaluation(
     device: str = "cuda",
 ):
     """Run full evaluation pipeline."""
+    from scripts.config import get_paths, save_effective_config
+
     eval_cfg = config["eval"]
-    output_dir = Path(data_dir) / "eval_results"
+    paths = get_paths(config)
+    output_dir = paths["eval_dir"]
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print("=" * 60)
@@ -280,7 +283,7 @@ def run_evaluation(
 
     # Load Stage 2 checkpoint
     if checkpoint_path is None:
-        checkpoint_path = Path(data_dir) / "checkpoints" / "stage2" / "final.pt"
+        checkpoint_path = paths["stage2_checkpoint_dir"] / "final.pt"
 
     if Path(checkpoint_path).exists():
         print(f"Loading checkpoint from {checkpoint_path}")
@@ -300,12 +303,12 @@ def run_evaluation(
     model.eval()
 
     # Load eval data
-    tokenized_path = Path(data_dir) / "tokenized_jets" / "tokenized_jets.json"
+    tokenized_path = paths["tokenized_dir"] / "tokenized_jets.json"
     with open(tokenized_path) as f:
         all_jets = json.load(f)
 
-    token_indices = np.load(Path(data_dir) / "tokenized_jets" / "token_indices.npy")
-    jet_masks = np.load(Path(data_dir) / "tokenized_jets" / "masks.npy")
+    token_indices = np.load(paths["tokenized_dir"] / "token_indices.npy")
+    jet_masks = np.load(paths["tokenized_dir"] / "masks.npy")
     jet_id_to_idx = {j["jet_id"]: i for i, j in enumerate(all_jets)}
 
     # Sample eval jets (balanced across classes)
@@ -360,15 +363,19 @@ def run_evaluation(
 def main():
     parser = argparse.ArgumentParser(description="Evaluate PhysLLaVA")
     parser.add_argument("--config", type=str, default="configs/default.yaml")
+    parser.add_argument("--override", type=str, default=None, help="Path to an override YAML config")
     parser.add_argument("--data-dir", type=str, default=None)
     parser.add_argument("--checkpoint", type=str, default=None)
     parser.add_argument("--device", type=str, default="cuda")
     args = parser.parse_args()
 
-    with open(args.config) as f:
-        config = yaml.safe_load(f)
+    from scripts.config import load_config
 
-    data_dir = args.data_dir or config["data_dir"]
+    config = load_config(args.config, args.override)
+    if args.data_dir is not None:
+        config["data_dir"] = args.data_dir
+
+    data_dir = config["data_dir"]
     run_evaluation(config, data_dir, args.checkpoint, args.device)
 
 

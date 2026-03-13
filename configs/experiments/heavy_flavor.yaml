@@ -1,0 +1,11 @@
+run_name: "heavy_flavor"
+dataset:
+  classes:
+    - X_bb       # label 0 — X → bb̄
+    - X_cc       # label 1 — X → cc̄
+    - QCD_ss     # label 185 — QCD ss̄
+    - QCD_light  # label 187 — QCD multijet
+stage1:
+  num_epochs: 5
+stage2:
+  num_epochs: 3

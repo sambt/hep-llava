@@ -1,13 +1,13 @@
 run_name: "full_res2p"
 dataset:
   classes:
-    - Res2P_bb
-    - Res2P_cc
-    - Res2P_ss
-    - Res2P_uu
-    - Res2P_gg
-    - Res2P_WW4q
-    - Res2P_WWlv
-    - Res2P_ZZ4q
-    - QCD_187
-    - QCD_185
+    - X_bb       # label 0 — X → bb̄
+    - X_cc       # label 1 — X → cc̄
+    - X_ss       # label 2 — X → ss̄
+    - X_bc       # label 4 — X → bc̄
+    - X_cs       # label 5 — X → cs̄
+    - X_bq       # label 6 — X → bq̄
+    - X_cq       # label 7 — X → cq̄
+    - X_gg       # label 9 — X → gg
+    - QCD_ss     # label 185 — QCD ss̄
+    - QCD_light  # label 187 — QCD multijet

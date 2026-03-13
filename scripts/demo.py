@@ -60,23 +60,16 @@ QUESTIONS = [
 # Formatting helpers
 # ---------------------------------------------------------------------------
 
-CLASS_DESCRIPTIONS = {
-    "Res2P_bb": "X → bb̄ (bottom quark pair)",
-    "Res2P_cc": "X → cc̄ (charm quark pair)",
-    "Res2P_ss": "X → ss̄ (strange quark pair)",
-    "Res2P_uu": "X → uū (up quark pair)",
-    "Res2P_gg": "X → gg (gluon pair)",
-    "Res2P_WW4q": "X → WW → qqqq (4-prong hadronic)",
-    "Res2P_WWlv": "X → WW → qqℓν (semi-leptonic)",
-    "Res2P_ZZ4q": "X → ZZ → qqqq (4-prong hadronic)",
-    "QCD_187": "QCD multijet background",
-    "QCD_185": "QCD multijet background (sub-type)",
-}
+def _class_description(class_name: str) -> str:
+    """Return a human-readable description for a JetClass-II label string."""
+    from data.download_jetclass import _physics_for_label
+    info = _physics_for_label(class_name)
+    return f"{info['process']} ({info['decay']})"
 
 
 def _jet_header(jet_meta: dict, idx: int, total: int) -> str:
     cls = jet_meta["class"]
-    desc = CLASS_DESCRIPTIONS.get(cls, cls)
+    desc = _class_description(cls)
     lines = [
         f"## Jet {idx}/{total} — `{cls}` ({desc})",
         "",

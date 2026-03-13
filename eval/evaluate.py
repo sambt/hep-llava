@@ -35,16 +35,16 @@ PROCESS_ID_PROMPTS = [
 ]
 
 CLASS_KEYWORDS = {
-    "Hbb": ["higgs", "h →", "h->", "hbb", "h → bb", "bb̄", "bottom"],
-    "Hcc": ["higgs", "hcc", "h → cc", "cc̄", "charm"],
-    "Hgg": ["higgs", "hgg", "h → gg", "gluon", "h to gg"],
-    "H4q": ["higgs", "h4q", "h → 4q", "ww*", "zz*", "four quark"],
-    "Hqql": ["higgs", "hqql", "h → qq", "lepton", "neutrino", "qqℓν"],
-    "Zqq": ["z boson", "zqq", "z →", "z->"],
-    "Wqq": ["w boson", "wqq", "w →", "w->"],
-    "Tbqq": ["top", "tbqq", "t →", "t->", "hadronic", "bqq"],
-    "Tbl": ["top", "tbl", "leptonic", "bℓν", "blv"],
-    "QCD": ["qcd", "light quark", "gluon jet", "q/g"],
+    "X_bb":      ["x → bb", "bb̄", "bottom", "x_bb", "bottom quark pair"],
+    "X_cc":      ["x → cc", "cc̄", "charm", "x_cc", "charm quark pair"],
+    "X_ss":      ["x → ss", "ss̄", "strange", "x_ss", "strange quark pair"],
+    "X_bc":      ["x → bc", "bc̄", "bottom-charm", "x_bc"],
+    "X_cs":      ["x → cs", "cs̄", "charm-strange", "x_cs"],
+    "X_bq":      ["x → bq", "bq̄", "bottom-light", "x_bq"],
+    "X_cq":      ["x → cq", "cq̄", "charm-light", "x_cq"],
+    "X_gg":      ["x → gg", "gluon pair", "x_gg", "two gluon"],
+    "QCD_ss":    ["qcd", "strange quark", "ss̄", "qcd_ss"],
+    "QCD_light": ["qcd", "light quark", "gluon jet", "q/g", "qcd_light", "multijet"],
 }
 
 

@@ -41,8 +41,8 @@ def derive_token_set_name(classes: list[str], tokenizer_type: str) -> str:
         name.
 
     Examples:
-        >>> derive_token_set_name(["Res2P_bb", "QCD_187", "Res2P_cc"], "omnijet_vqvae")
-        'QCD_187_Res2P_bb_Res2P_cc__omnijet_vqvae'
+        >>> derive_token_set_name(["X_bb", "QCD_light", "X_cc"], "omnijet_vqvae")
+        'QCD_light_X_bb_X_cc__omnijet_vqvae'
     """
     sorted_cls = "_".join(sorted(classes))
     full_name = f"{sorted_cls}__{tokenizer_type}"

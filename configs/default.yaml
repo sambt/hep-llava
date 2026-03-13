@@ -33,17 +33,21 @@ dataset:
   name: "jet-universe/jetclass2"
   num_jets_per_class: 3000
   max_constituents: 128
+  # Class names must match the official JetClass-II label strings
+  # defined in data/jetclass_labels.py (idx_to_label).
+  # 8 Res2P resonance classes (Res2P_0000.parquet, labels 0–9)
+  # 2 QCD classes (QCD_0000.parquet; QCD_ss=185, QCD_light=187 are most populated)
   classes:
-    - Hbb    # H -> bb
-    - Hcc    # H -> cc
-    - Hgg    # H -> gg
-    - H4q    # H -> 4q (via WW*/ZZ*)
-    - Hqql   # H -> qqlv (via WW*/ZZ*)
-    - Zqq    # Z -> qq
-    - Wqq    # W -> qq'
-    - Tbqq   # t -> bqq'
-    - Tbl    # t -> blv
-    - QCD    # q/g jets
+    - X_bb       # label   0 — X → bb̄
+    - X_cc       # label   1 — X → cc̄
+    - X_ss       # label   2 — X → ss̄
+    - X_bc       # label   4 — X → bc̄
+    - X_cs       # label   5 — X → cs̄
+    - X_bq       # label   6 — X → bq̄ (bottom + light quark)
+    - X_cq       # label   7 — X → cq̄ (charm + light quark)
+    - X_gg       # label   9 — X → gg
+    - QCD_ss     # label 185 — QCD ss̄ jets  (~13 847 in QCD_0000)
+    - QCD_light  # label 187 — QCD multijet  (~59 442 in QCD_0000)
 
 # OmniJet-alpha VQ-VAE tokenizer
 tokenizer:

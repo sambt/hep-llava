@@ -175,17 +175,40 @@ def download_jetclass2_subset(
 def main():
     parser = argparse.ArgumentParser(description="Download JetClass-II subset")
     parser.add_argument("--config", type=str, default="configs/default.yaml")
+    parser.add_argument("--override", type=str, default=None, help="Path to an override YAML config")
     parser.add_argument("--data-dir", type=str, default=None, help="Override data_dir from config")
     parser.add_argument("--num-jets-per-class", type=int, default=None)
+    parser.add_argument(
+        "--classes",
+        type=str,
+        default=None,
+        help="Comma-separated list of classes to download (e.g. Res2P_bb,QCD_187). "
+             "Overrides config dataset.classes before token_set_name derivation.",
+    )
     args = parser.parse_args()
 
-    with open(args.config) as f:
-        config = yaml.safe_load(f)
+    from scripts.config import load_config, get_paths
 
-    data_dir = args.data_dir or config["data_dir"]
+    config = load_config(args.config, args.override)
+
+    # Apply --classes override before path resolution (affects token_set_name)
+    if args.classes is not None:
+        config["dataset"]["classes"] = [c.strip() for c in args.classes.split(",")]
+        # Re-derive token_set_name with the updated class list
+        config["token_set_name"] = None  # trigger re-derivation in load_config logic
+        from scripts.config import derive_token_set_name
+        tokenizer_type = config.get("tokenizer", {}).get("type", "omnijet_vqvae")
+        config["token_set_name"] = derive_token_set_name(
+            config["dataset"]["classes"], tokenizer_type
+        )
+
+    if args.data_dir is not None:
+        config["data_dir"] = args.data_dir
+
+    paths = get_paths(config)
     num_jets = args.num_jets_per_class or config["dataset"]["num_jets_per_class"]
 
-    output_dir = download_jetclass2_subset(data_dir, num_jets)
+    output_dir = download_jetclass2_subset(str(paths["data_dir"]), num_jets)
     print(f"\nDone. Data saved to: {output_dir}")
 
 

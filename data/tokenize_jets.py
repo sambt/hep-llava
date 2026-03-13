@@ -214,7 +214,13 @@ def tokenize_all_jets(
         Path to the output directory with tokenized data.
     """
     input_dir = Path(data_dir) / "jetclass2_subset"
-    output_dir = Path(data_dir) / "tokenized_jets"
+
+    # Derive token_set_name from config if paths dict not directly available;
+    # callers that already resolved paths should pass output_dir via config or
+    # call get_paths() themselves.  Here we compute from config for simplicity.
+    from scripts.config import derive_token_set_name, get_paths as _get_paths
+    _paths = _get_paths(config)
+    output_dir = _paths["tokenized_dir"]
     output_dir.mkdir(parents=True, exist_ok=True)
 
     max_constituents = config["dataset"]["max_constituents"]
@@ -323,15 +329,35 @@ def tokenize_all_jets(
 def main():
     parser = argparse.ArgumentParser(description="Tokenize jets with OmniJet-alpha")
     parser.add_argument("--config", type=str, default="configs/default.yaml")
+    parser.add_argument("--override", type=str, default=None, help="Path to an override YAML config")
     parser.add_argument("--data-dir", type=str, default=None)
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument(
+        "--classes",
+        type=str,
+        default=None,
+        help="Comma-separated list of classes to tokenize (e.g. Res2P_bb,QCD_187). "
+             "Overrides config dataset.classes before token_set_name derivation.",
+    )
     args = parser.parse_args()
 
-    with open(args.config) as f:
-        config = yaml.safe_load(f)
+    from scripts.config import load_config, derive_token_set_name
 
-    data_dir = args.data_dir or config["data_dir"]
+    config = load_config(args.config, args.override)
+
+    # Apply --classes override before path resolution
+    if args.classes is not None:
+        config["dataset"]["classes"] = [c.strip() for c in args.classes.split(",")]
+        tokenizer_type = config.get("tokenizer", {}).get("type", "omnijet_vqvae")
+        config["token_set_name"] = derive_token_set_name(
+            config["dataset"]["classes"], tokenizer_type
+        )
+
+    if args.data_dir is not None:
+        config["data_dir"] = args.data_dir
+
+    data_dir = config["data_dir"]
     output_dir = tokenize_all_jets(data_dir, config, args.device, args.batch_size)
     print(f"\nDone. Tokenized data saved to: {output_dir}")
 

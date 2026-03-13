@@ -1,0 +1,11 @@
+run_name: "heavy_flavor"
+dataset:
+  classes:
+    - Res2P_bb
+    - Res2P_cc
+    - QCD_187
+    - QCD_185
+stage1:
+  num_epochs: 5
+stage2:
+  num_epochs: 3

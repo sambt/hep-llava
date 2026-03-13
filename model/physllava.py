@@ -8,7 +8,6 @@ import torch
 import torch.nn as nn
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from model.physics_encoder import PhysicsTokenEncoder
 from model.projector import MLPProjector
 
 
@@ -21,9 +20,11 @@ class PhysLLaVA(nn.Module):
     """PhysLLaVA: LLaVA-style model for particle physics jets.
 
     Components:
-        1. PhysicsTokenEncoder: Transformer over VQ-VAE tokens
-        2. MLPProjector: Projects to LLM embedding space
-        3. LLM: Llama 3.1 8B Instruct (or similar)
+        1. Physics encoder: either a ``PhysicsTokenEncoder`` trained from scratch
+           (``type: "custom"``) or a frozen pretrained ``OmniJetFoundationEncoder``
+           (``type: "omnijet_foundation"``).
+        2. MLPProjector: Projects to LLM embedding space.
+        3. LLM: Llama 3.1 8B Instruct (or similar).
 
     The model replaces <jet> placeholder tokens in the text input with
     projected physics embeddings, then runs standard autoregressive LM.
@@ -36,11 +37,19 @@ class PhysLLaVA(nn.Module):
         llm_name: str = "meta-llama/Llama-3.1-8B-Instruct",
         torch_dtype: str = "bfloat16",
         use_flash_attention: bool = True,
+        data_dir: str | None = None,
     ):
         super().__init__()
 
-        # Physics encoder
-        self.physics_encoder = PhysicsTokenEncoder(**physics_encoder_config)
+        # Physics encoder (custom transformer or frozen OmniJet foundation)
+        self.physics_encoder = self._build_physics_encoder(
+            physics_encoder_config, data_dir=data_dir
+        )
+
+        # Auto-set projector input_dim from encoder hidden_dim when available
+        projector_config = dict(projector_config)
+        if hasattr(self.physics_encoder, "hidden_dim"):
+            projector_config["input_dim"] = self.physics_encoder.hidden_dim
 
         # MLP projector
         self.projector = MLPProjector(**projector_config)
@@ -75,6 +84,57 @@ class PhysLLaVA(nn.Module):
         # Store token IDs
         self.jet_token_id = self.tokenizer.convert_tokens_to_ids(JET_TOKEN)
         self.jet_patch_token_id = self.tokenizer.convert_tokens_to_ids(DEFAULT_JET_PATCH_TOKEN)
+
+    # -----------------------------------------------------------------------
+    # Encoder factory
+    # -----------------------------------------------------------------------
+
+    @staticmethod
+    def _build_physics_encoder(
+        config: dict,
+        data_dir: str | None = None,
+    ) -> nn.Module:
+        """Instantiate the correct physics encoder based on ``config["type"]``.
+
+        Args:
+            config: Physics encoder sub-config dict.  Must contain a ``type``
+                key with value ``"custom"`` or ``"omnijet_foundation"``.
+            data_dir: Optional root data directory; used to auto-detect the
+                OmniJet-alpha directory when ``type == "omnijet_foundation"``
+                and ``omnijet_dir`` is not set in *config*.
+
+        Returns:
+            An ``nn.Module`` physics encoder.
+
+        Raises:
+            ValueError: If ``config["type"]`` is not recognised.
+        """
+        enc_type = config.get("type", "custom")
+
+        if enc_type == "custom":
+            from model.physics_encoder import PhysicsTokenEncoder
+
+            # Strip the "type" key — PhysicsTokenEncoder does not expect it
+            enc_config = {k: v for k, v in config.items() if k != "type"}
+            return PhysicsTokenEncoder(**enc_config)
+
+        elif enc_type == "omnijet_foundation":
+            from model.omnijet_encoder import OmniJetFoundationEncoder
+            from pathlib import Path
+
+            omnijet_dir = config.get("omnijet_dir")
+            if omnijet_dir is None and data_dir is not None:
+                omnijet_dir = Path(data_dir) / "omnijet_alpha"
+
+            ckpt = config.get("generative_checkpoint")
+            freeze = config.get("freeze", True)
+            return OmniJetFoundationEncoder(omnijet_dir, ckpt, freeze=freeze)
+
+        else:
+            raise ValueError(
+                f"Unknown physics_encoder.type: {enc_type!r}.  "
+                "Valid options are 'custom' and 'omnijet_foundation'."
+            )
 
     def encode_jets(
         self,

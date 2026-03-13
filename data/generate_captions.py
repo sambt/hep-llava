@@ -507,7 +507,9 @@ def generate_all_captions(
     """
     random.seed(seed)
 
-    tokenized_path = Path(data_dir) / "tokenized_jets" / "tokenized_jets.json"
+    from scripts.config import get_paths
+    _paths = get_paths(config)
+    tokenized_path = _paths["tokenized_dir"] / "tokenized_jets.json"
     with open(tokenized_path) as f:
         all_jets = json.load(f)
 
@@ -551,7 +553,7 @@ def generate_all_captions(
         print("  Skipping LLM captions (--skip-llm flag)")
 
     # Save
-    output_dir = Path(data_dir) / "caption_data"
+    output_dir = _paths["caption_data_dir"]
     output_dir.mkdir(parents=True, exist_ok=True)
 
     output_path = output_dir / "captions.json"
@@ -567,15 +569,19 @@ def generate_all_captions(
 def main():
     parser = argparse.ArgumentParser(description="Generate captions for tokenized jets")
     parser.add_argument("--config", type=str, default="configs/default.yaml")
+    parser.add_argument("--override", type=str, default=None, help="Path to an override YAML config")
     parser.add_argument("--data-dir", type=str, default=None)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--skip-llm", action="store_true", help="Skip LLM-generated captions (Strategy 2)")
     args = parser.parse_args()
 
-    with open(args.config) as f:
-        config = yaml.safe_load(f)
+    from scripts.config import load_config
 
-    data_dir = args.data_dir or config["data_dir"]
+    config = load_config(args.config, args.override)
+    if args.data_dir is not None:
+        config["data_dir"] = args.data_dir
+
+    data_dir = config["data_dir"]
     generate_all_captions(data_dir, config, args.seed, skip_llm=args.skip_llm)
 
 

@@ -156,14 +156,32 @@ def build_stage1_dataset(
     data_dir: str,
     tokenizer: PreTrainedTokenizer,
     max_text_length: int = 512,
+    paths: dict | None = None,
 ) -> Dataset:
-    """Build dataset for Stage 1 (caption alignment)."""
-    data_path = Path(data_dir)
+    """Build dataset for Stage 1 (caption alignment).
+
+    Args:
+        data_dir: Root data directory (legacy; used when *paths* is not provided).
+        tokenizer: LLM tokenizer.
+        max_text_length: Max tokens for text input.
+        paths: Optional resolved paths dict from :func:`scripts.config.get_paths`.
+            When provided, the new directory layout is used; otherwise the legacy
+            flat layout under *data_dir* is used for backward compatibility.
+    """
+    if paths is not None:
+        tokenized_dir = paths["tokenized_dir"]
+        caption_dir = paths["caption_data_dir"]
+    else:
+        # Legacy flat layout
+        data_path = Path(data_dir)
+        tokenized_dir = data_path / "tokenized_jets"
+        caption_dir = data_path / "caption_data"
+
     return PhysLLaVADataset(
-        conversations_path=data_path / "caption_data" / "captions.json",
-        tokenized_jets_path=data_path / "tokenized_jets" / "tokenized_jets.json",
-        token_indices_path=data_path / "tokenized_jets" / "token_indices.npy",
-        masks_path=data_path / "tokenized_jets" / "masks.npy",
+        conversations_path=caption_dir / "captions.json",
+        tokenized_jets_path=tokenized_dir / "tokenized_jets.json",
+        token_indices_path=tokenized_dir / "token_indices.npy",
+        masks_path=tokenized_dir / "masks.npy",
         tokenizer=tokenizer,
         max_text_length=max_text_length,
     )
@@ -173,24 +191,41 @@ def build_stage2_dataset(
     data_dir: str,
     tokenizer: PreTrainedTokenizer,
     max_text_length: int = 512,
+    paths: dict | None = None,
 ) -> Dataset:
-    """Build dataset for Stage 2 (instruction tuning with captions + QA)."""
-    data_path = Path(data_dir)
+    """Build dataset for Stage 2 (instruction tuning with captions + QA).
+
+    Args:
+        data_dir: Root data directory (legacy; used when *paths* is not provided).
+        tokenizer: LLM tokenizer.
+        max_text_length: Max tokens for text input.
+        paths: Optional resolved paths dict from :func:`scripts.config.get_paths`.
+            When provided, the new directory layout is used; otherwise the legacy
+            flat layout under *data_dir* is used for backward compatibility.
+    """
+    if paths is not None:
+        tokenized_dir = paths["tokenized_dir"]
+        caption_dir = paths["caption_data_dir"]
+    else:
+        # Legacy flat layout
+        data_path = Path(data_dir)
+        tokenized_dir = data_path / "tokenized_jets"
+        caption_dir = data_path / "caption_data"
 
     caption_ds = PhysLLaVADataset(
-        conversations_path=data_path / "caption_data" / "captions.json",
-        tokenized_jets_path=data_path / "tokenized_jets" / "tokenized_jets.json",
-        token_indices_path=data_path / "tokenized_jets" / "token_indices.npy",
-        masks_path=data_path / "tokenized_jets" / "masks.npy",
+        conversations_path=caption_dir / "captions.json",
+        tokenized_jets_path=tokenized_dir / "tokenized_jets.json",
+        token_indices_path=tokenized_dir / "token_indices.npy",
+        masks_path=tokenized_dir / "masks.npy",
         tokenizer=tokenizer,
         max_text_length=max_text_length,
     )
 
     qa_ds = PhysLLaVADataset(
-        conversations_path=data_path / "caption_data" / "qa_data.json",
-        tokenized_jets_path=data_path / "tokenized_jets" / "tokenized_jets.json",
-        token_indices_path=data_path / "tokenized_jets" / "token_indices.npy",
-        masks_path=data_path / "tokenized_jets" / "masks.npy",
+        conversations_path=caption_dir / "qa_data.json",
+        tokenized_jets_path=tokenized_dir / "tokenized_jets.json",
+        token_indices_path=tokenized_dir / "token_indices.npy",
+        masks_path=tokenized_dir / "masks.npy",
         tokenizer=tokenizer,
         max_text_length=max_text_length,
     )

@@ -8,6 +8,19 @@
 data_dir: "/path/to/your/data/directory"  # <-- CHANGE THIS
 
 # ============================================================
+# RUN IDENTIFICATION
+# run_name: logical name for this experiment run.  All
+#   run-specific artifacts (checkpoints, captions, eval) live
+#   under {data_dir}/runs/{run_name}/.
+# token_set_name: key for the shared tokenized data directory.
+#   null → auto-derived from dataset.classes + tokenizer.type.
+#   Set explicitly to share tokenized data across runs that use
+#   the same classes and tokenizer.
+# ============================================================
+run_name: "default"
+token_set_name: null    # null = auto-derived
+
+# ============================================================
 # API TOKENS — Environment variable names for credentials
 # These env vars must be set in the shell before running.
 # ============================================================
@@ -42,7 +55,11 @@ tokenizer:
   input_features: ["pt_rel", "eta_rel", "phi_rel"]
 
 # Physics encoder (transformer over VQ tokens)
+# type: "custom"           — train a 6-layer transformer from scratch (default)
+# type: "omnijet_foundation" — use the frozen pretrained OmniJet-alpha generative
+#                              model as a backbone (no encoder training needed)
 physics_encoder:
+  type: "custom"
   vocab_size: 8192  # must match tokenizer codebook_size
   hidden_dim: 512
   num_layers: 6

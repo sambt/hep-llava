@@ -1,0 +1,33 @@
+# Core ML
+torch>=2.1.0
+transformers>=4.40.0
+peft>=0.10.0
+accelerate>=0.28.0
+bitsandbytes>=0.43.0
+
+# Data
+datasets>=2.18.0
+pyarrow>=15.0.0
+h5py>=3.10.0
+pandas>=2.2.0
+
+# OmniJet-alpha dependencies
+# (will be installed from cloned repo, but core deps listed here)
+vector-quantize-pytorch>=1.12.0
+
+# Training
+wandb>=0.16.0
+tqdm>=4.66.0
+
+# Evaluation
+scikit-learn>=1.4.0
+matplotlib>=3.8.0
+seaborn>=0.13.0
+
+# Utilities
+pyyaml>=6.0.1
+jsonlines>=4.0.0
+rich>=13.7.0
+
+# LLM serving (for inference/eval)
+vllm>=0.4.0

@@ -1,0 +1,107 @@
+# PhysLLaVA Configuration
+# ======================
+
+# ============================================================
+# DATA DIRECTORY — Set this to your cluster storage path
+# All large artifacts (datasets, models, checkpoints) go here
+# ============================================================
+data_dir: "/path/to/your/data/directory"  # <-- CHANGE THIS
+
+# Dataset
+dataset:
+  name: "jet-universe/jetclass2"
+  num_jets_per_class: 3000
+  max_constituents: 128
+  classes:
+    - Hbb    # H -> bb
+    - Hcc    # H -> cc
+    - Hgg    # H -> gg
+    - H4q    # H -> 4q (via WW*/ZZ*)
+    - Hqql   # H -> qqlv (via WW*/ZZ*)
+    - Zqq    # Z -> qq
+    - Wqq    # W -> qq'
+    - Tbqq   # t -> bqq'
+    - Tbl    # t -> blv
+    - QCD    # q/g jets
+
+# OmniJet-alpha VQ-VAE tokenizer
+tokenizer:
+  repo_url: "https://github.com/uhh-pd-ml/omnijet_alpha.git"
+  codebook_size: 8192
+  # Checkpoint will be downloaded/found after cloning the repo
+  # The exact path depends on the repo structure — the setup script will locate it
+  checkpoint_path: null  # auto-detected after setup
+  input_features: ["pt_rel", "eta_rel", "phi_rel"]
+
+# Physics encoder (transformer over VQ tokens)
+physics_encoder:
+  vocab_size: 8192  # must match tokenizer codebook_size
+  hidden_dim: 512
+  num_layers: 6
+  num_heads: 8
+  dropout: 0.1
+  max_seq_len: 128  # max constituents per jet
+
+# MLP Projector (LLaVA 1.5 style)
+projector:
+  input_dim: 512   # must match physics_encoder.hidden_dim
+  output_dim: 4096  # must match LLM hidden size
+  # Architecture: Linear(input_dim, output_dim) -> GELU -> Linear(output_dim, output_dim)
+
+# Base LLM
+llm:
+  model_name: "meta-llama/Llama-3.1-8B-Instruct"
+  torch_dtype: "bfloat16"
+  use_flash_attention: true
+
+# Caption & QA generation
+captions:
+  num_rule_based_templates: 15
+  num_slot_fill_templates: 50
+  num_llm_generated_per_class: 30
+  qa_pairs_per_jet: 15
+  difficulty_levels: ["factual", "kinematic", "reasoning"]
+
+# Training Stage 1: Feature Alignment
+stage1:
+  learning_rate: 1.0e-3
+  batch_size: 64
+  num_epochs: 5
+  warmup_ratio: 0.03
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  # Freeze: LLM, VQ-VAE tokenizer
+  # Train: physics_encoder + projector
+  dataloader_num_workers: 4
+
+# Training Stage 2: Instruction Tuning
+stage2:
+  learning_rate: 2.0e-5
+  batch_size: 16
+  num_epochs: 3
+  warmup_ratio: 0.03
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  gradient_accumulation_steps: 4
+  # LoRA config for LLM
+  lora:
+    rank: 32
+    alpha: 64
+    dropout: 0.05
+    target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+  gradient_checkpointing: true
+  dataloader_num_workers: 4
+
+# Evaluation
+eval:
+  batch_size: 32
+  max_new_tokens: 256
+  temperature: 0.1
+  num_eval_samples_per_class: 200
+
+# Logging
+logging:
+  use_wandb: true
+  wandb_project: "physllava"
+  log_every_n_steps: 10
+  save_every_n_steps: 500

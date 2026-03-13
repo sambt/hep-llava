@@ -5,7 +5,7 @@
 # DATA DIRECTORY — Set this to your cluster storage path
 # All large artifacts (datasets, models, checkpoints) go here
 # ============================================================
-data_dir: "/path/to/your/data/directory"  # <-- CHANGE THIS
+data_dir: "/n/holystore01/LABS/iaifi_lab/Users/sambt/hep-llava-data/"  # <-- CHANGE THIS
 
 # ============================================================
 # API TOKENS — Environment variable names for credentials
@@ -13,12 +13,12 @@ data_dir: "/path/to/your/data/directory"  # <-- CHANGE THIS
 # ============================================================
 env:
   hf_token_var: "HF_TOKEN"            # HuggingFace token (for gated models like Llama 3.1)
-  openrouter_token_var: "OPENROUTER_API_KEY"  # OpenRouter API key (for LLM-generated captions)
+  openrouter_token_var: "OPENROUTER_KEY"  # OpenRouter API key (for LLM-generated captions)
 
 # Dataset
 dataset:
   name: "jet-universe/jetclass2"
-  num_jets_per_class: 3000
+  num_jets_per_class: 500
   max_constituents: 128
   classes:
     - Hbb    # H -> bb
@@ -35,15 +35,15 @@ dataset:
 # OmniJet-alpha VQ-VAE tokenizer
 tokenizer:
   repo_url: "https://github.com/uhh-pd-ml/omnijet_alpha.git"
-  codebook_size: 8192
+  codebook_size: 32768  # 32^3 for simple discretization fallback
   # Checkpoint will be downloaded/found after cloning the repo
   # The exact path depends on the repo structure — the setup script will locate it
-  checkpoint_path: null  # auto-detected after setup
+  checkpoint_path: "/n/holystore01/LABS/iaifi_lab/Users/sambt/hep-llava-data/omnijet_alpha/checkpoints/vqvae_8192_tokens/model_ckpt.ckpt"
   input_features: ["pt_rel", "eta_rel", "phi_rel"]
 
 # Physics encoder (transformer over VQ tokens)
 physics_encoder:
-  vocab_size: 8192  # must match tokenizer codebook_size
+  vocab_size: 32768  # must match tokenizer codebook_size (32^3 simple discretization)
   hidden_dim: 512
   num_layers: 6
   num_heads: 8
@@ -60,7 +60,7 @@ projector:
 llm:
   model_name: "meta-llama/Llama-3.1-8B-Instruct"
   torch_dtype: "bfloat16"
-  use_flash_attention: true
+  use_flash_attention: false
 
 # Caption & QA generation
 captions:
@@ -70,14 +70,14 @@ captions:
   qa_pairs_per_jet: 15
   difficulty_levels: ["factual", "kinematic", "reasoning"]
   # LLM-generated captions (Strategy 2) via OpenRouter
-  llm_caption_model: "anthropic/claude-sonnet-4" # OpenRouter model ID
+  llm_caption_model: "deepseek/deepseek-v3.2" # OpenRouter model ID
   llm_caption_max_tokens: 300
 
 # Training Stage 1: Feature Alignment
 stage1:
   learning_rate: 1.0e-3
-  batch_size: 64
-  num_epochs: 5
+  batch_size: 8
+  num_epochs: 1
   warmup_ratio: 0.03
   weight_decay: 0.0
   max_grad_norm: 1.0
@@ -88,8 +88,8 @@ stage1:
 # Training Stage 2: Instruction Tuning
 stage2:
   learning_rate: 2.0e-5
-  batch_size: 16
-  num_epochs: 3
+  batch_size: 4
+  num_epochs: 1
   warmup_ratio: 0.03
   weight_decay: 0.0
   max_grad_norm: 1.0
@@ -108,11 +108,11 @@ eval:
   batch_size: 32
   max_new_tokens: 256
   temperature: 0.1
-  num_eval_samples_per_class: 200
+  num_eval_samples_per_class: 50
 
 # Logging
 logging:
-  use_wandb: true
+  use_wandb: false
   wandb_project: "physllava"
   log_every_n_steps: 10
   save_every_n_steps: 500

@@ -155,7 +155,7 @@ class CombinedDataset(Dataset):
 def build_stage1_dataset(
     data_dir: str,
     tokenizer: PreTrainedTokenizer,
-    max_text_length: int = 512,
+    max_text_length: int = 256,
 ) -> Dataset:
     """Build dataset for Stage 1 (caption alignment)."""
     data_path = Path(data_dir)
@@ -172,13 +172,21 @@ def build_stage1_dataset(
 def build_stage2_dataset(
     data_dir: str,
     tokenizer: PreTrainedTokenizer,
-    max_text_length: int = 512,
+    max_text_length: int = 256,
 ) -> Dataset:
-    """Build dataset for Stage 2 (instruction tuning with captions + QA)."""
+    """Build dataset for Stage 2 (instruction tuning with captions + QA).
+
+    Uses pre-sampled subset files if available (captions_stage2.json,
+    qa_stage2.json) to keep training time manageable.
+    """
     data_path = Path(data_dir)
 
+    # Use subset files if available, otherwise use full files
+    captions_file = "captions_stage2.json" if (data_path / "caption_data" / "captions_stage2.json").exists() else "captions.json"
+    qa_file = "qa_stage2.json" if (data_path / "caption_data" / "qa_stage2.json").exists() else "qa_data.json"
+
     caption_ds = PhysLLaVADataset(
-        conversations_path=data_path / "caption_data" / "captions.json",
+        conversations_path=data_path / "caption_data" / captions_file,
         tokenized_jets_path=data_path / "tokenized_jets" / "tokenized_jets.json",
         token_indices_path=data_path / "tokenized_jets" / "token_indices.npy",
         masks_path=data_path / "tokenized_jets" / "masks.npy",
@@ -187,7 +195,7 @@ def build_stage2_dataset(
     )
 
     qa_ds = PhysLLaVADataset(
-        conversations_path=data_path / "caption_data" / "qa_data.json",
+        conversations_path=data_path / "caption_data" / qa_file,
         tokenized_jets_path=data_path / "tokenized_jets" / "tokenized_jets.json",
         token_indices_path=data_path / "tokenized_jets" / "token_indices.npy",
         masks_path=data_path / "tokenized_jets" / "masks.npy",

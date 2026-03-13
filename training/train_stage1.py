@@ -59,6 +59,11 @@ def train_stage1(config: dict, data_dir: str, device: str = "cuda"):
     # Freeze LLM for Stage 1
     model.freeze_llm()
 
+    # Enable gradient checkpointing for the LLM to reduce memory (even when frozen,
+    # activations still need memory during the forward pass when computing loss)
+    if hasattr(model.llm, 'gradient_checkpointing_enable'):
+        model.llm.gradient_checkpointing_enable()
+
     param_info = model.get_trainable_params()
     print(f"Trainable parameters: {param_info['trainable']:,} ({param_info['trainable_pct']:.2f}%)")
     print(f"Frozen parameters: {param_info['frozen']:,}")

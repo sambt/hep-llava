@@ -1,5 +1,7 @@
-run_name: "jetclass1_full"
+run_name: "jetclass1_full_omnijet"
 
+# JetClass I (all 10 classes) with frozen OmniJet-alpha generative backbone.
+# Identical dataset to jetclass1_full; only the encoder backend changes.
 dataset:
   source: "jetclass1"
   jetclass1_path: "/n/holystore01/LABS/iaifi_lab/Lab/sambt/JetClass"
@@ -16,3 +18,8 @@ dataset:
     - WToQQ         # W → qq̄
     - ZJetsToNuNu   # Z → νν̄ + jets
     - ZToQQ         # Z → qq̄
+
+physics_encoder:
+  type: "omnijet_foundation"
+  freeze: true
+  unfreeze_last_n_layers: 0  # 0 = fully frozen; set 1-3 to unfreeze last N GPT blocks

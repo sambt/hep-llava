@@ -184,6 +184,53 @@ class OmniJetFoundationEncoder(nn.Module):
             for param in self.backbone.parameters():
                 param.requires_grad = False
 
+    # ---- Freeze / unfreeze -------------------------------------------------
+
+    def unfreeze_last_n_layers(self, n: int) -> None:
+        """Unfreeze the last *n* GPT blocks of the backbone for fine-tuning.
+
+        This is useful for partially adapting the pretrained OmniJet backbone
+        to a new task while keeping earlier layers frozen (transfer learning).
+        Calling with n=0 is a no-op (backbone stays as-is).
+
+        The OmniJet-alpha generative model has 3 GPT blocks by default.
+        Typical usage: unfreeze_last_n_layers(1) or (2).
+
+        Args:
+            n: Number of GPT blocks to unfreeze, counting from the last.
+               Must be ≥ 0.  If n ≥ total blocks, all blocks are unfrozen.
+        """
+        if n <= 0:
+            return
+
+        # Freeze everything first (ensure a clean slate)
+        for param in self.backbone.parameters():
+            param.requires_grad = False
+
+        # Locate GPT blocks — the attribute is named ``GPT_blocks`` in the
+        # BackboneModel from gabbro.models.gpt_model.
+        gpt_blocks = getattr(self.backbone, "GPT_blocks", None)
+        if gpt_blocks is None:
+            raise AttributeError(
+                "Expected 'GPT_blocks' attribute on OmniJet backbone. "
+                "The backbone architecture may have changed; inspect the model to find the block list."
+            )
+
+        blocks_to_unfreeze = list(gpt_blocks)[-n:]
+        for block in blocks_to_unfreeze:
+            for param in block.parameters():
+                param.requires_grad = True
+
+        # Put the unfrozen blocks into train mode
+        for block in blocks_to_unfreeze:
+            block.train()
+
+        n_unfrozen = sum(p.numel() for b in blocks_to_unfreeze for p in b.parameters())
+        print(
+            f"OmniJet backbone: unfroze last {len(blocks_to_unfreeze)}/{len(gpt_blocks)} "
+            f"GPT blocks ({n_unfrozen:,} parameters)"
+        )
+
     # ---- Properties --------------------------------------------------------
 
     @property

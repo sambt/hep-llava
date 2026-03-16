@@ -35,35 +35,80 @@ PROCESS_ID_PROMPTS = [
 ]
 
 CLASS_KEYWORDS = {
-    "X_bb":      ["x → bb", "bb̄", "bottom", "x_bb", "bottom quark pair"],
-    "X_cc":      ["x → cc", "cc̄", "charm", "x_cc", "charm quark pair"],
-    "X_ss":      ["x → ss", "ss̄", "strange", "x_ss", "strange quark pair"],
-    "X_bc":      ["x → bc", "bc̄", "bottom-charm", "x_bc"],
-    "X_cs":      ["x → cs", "cs̄", "charm-strange", "x_cs"],
-    "X_bq":      ["x → bq", "bq̄", "bottom-light", "x_bq"],
-    "X_cq":      ["x → cq", "cq̄", "charm-light", "x_cq"],
-    "X_gg":      ["x → gg", "gluon pair", "x_gg", "two gluon"],
-    "QCD_ss":    ["qcd", "strange quark", "ss̄", "qcd_ss"],
-    "QCD_light": ["qcd", "light quark", "gluon jet", "q/g", "qcd_light", "multijet"],
+    # ── JetClass-I ────────────────────────────────────────────────────────
+    # Listed first so that Higgs-specific patterns (h →) score higher than
+    # generic resonance patterns (x →) when running on JetClass-1 data.
+    # All patterns are compiled as case-insensitive regex via re.search().
+    "HToBB":     ["h → bb̄", r"h→bb", r"htobb", r"higgs.*→.*bb", r"higgs.*bottom quark",
+                  r"higgs.*bb̄", r"h → b"],
+    "HToCC":     ["h → cc̄", r"h→cc", r"htocc", r"higgs.*→.*cc", r"higgs.*charm quark",
+                  r"higgs.*cc̄", r"h → c"],
+    "HToGG":     [r"h → gg", r"h→gg", r"htogg", r"higgs.*→.*gg", r"higgs.*gluon"],
+    "HToWW2Q1L": [r"htoww2q1l", r"semi.leptonic higgs", r"higgs.*ww.*semi",
+                  r"h.*ww.*qqℓν", r"h.*ww.*three.prong", r"higgs.*three.prong.*ww"],
+    "HToWW4Q":   [r"htoww4q", r"fully hadronic higgs", r"higgs.*ww.*four",
+                  r"h.*ww.*qqqq", r"higgs.*ww.*qqqq", r"higgs.*four quark"],
+    "TTBar":     [r"ttbar(?!lep)", r"fully hadronic tt̄", r"tt̄.*fully hadronic",
+                  r"pp → tt̄.*hadronic", r"top.antitop.*hadronic"],
+    "TTBarLep":  [r"ttbarlep", r"semi.leptonic tt̄", r"tt̄.*semi.leptonic",
+                  r"top.*semi.leptonic", r"pp → tt̄.*semi"],
+    "WToQQ":     [r"w → qq̄", r"wtoqq", r"hadronic w\b", r"w boson.*hadronic",
+                  r"w boson mass.*80", r"w → q"],
+    "ZJetsToNuNu": [r"z → νν̄", r"zjetstonunu", r"invisible z", r"z.*neutrino pair",
+                    r"initial.state radiation", r"isr jet", r"z boson decays invisibly"],
+    "ZToQQ":     [r"z → qq̄", r"ztoqq", r"hadronic z\b", r"z boson.*hadronic",
+                  r"z boson mass.*91", r"z → q"],
+    # ── JetClass-II (Res2P) ────────────────────────────────────────────────
+    "Res2P_bb":  [r"res2p_bb", r"x → bb̄", r"x→bb", r"resonance.*→.*bb"],
+    "Res2P_cc":  [r"res2p_cc", r"x → cc̄", r"x→cc", r"resonance.*→.*cc"],
+    "Res2P_ss":  [r"res2p_ss", r"x → ss̄", r"x→ss"],
+    "Res2P_uu":  [r"res2p_uu", r"x → uū", r"x→uu"],
+    "Res2P_gg":  [r"res2p_gg", r"x → gg", r"resonance.*→.*gg"],
+    "Res2P_WW4q": [r"res2p_ww4q", r"x → ww.*qqqq", r"ww4q"],
+    "Res2P_WWlv": [r"res2p_wwlv", r"x → ww.*qqℓν", r"wwlv"],
+    "Res2P_ZZ4q": [r"res2p_zz4q", r"x → zz.*qqqq", r"zz4q"],
+    "X_bb":      [r"\bx_bb\b", r"x → bb̄", r"resonance.*bb̄"],
+    "X_cc":      [r"\bx_cc\b", r"x → cc̄", r"resonance.*cc̄"],
+    "X_ss":      [r"\bx_ss\b", r"x → ss̄"],
+    "X_bc":      [r"\bx_bc\b", r"x → bc"],
+    "X_cs":      [r"\bx_cs\b", r"x → cs"],
+    "X_bq":      [r"\bx_bq\b", r"x → bq"],
+    "X_cq":      [r"\bx_cq\b", r"x → cq"],
+    "X_gg":      [r"\bx_gg\b", r"x → gg"],
+    "QCD_ss":    [r"qcd_ss", r"qcd.*strange quark"],
+    "QCD_light": [r"qcd_light", r"qcd.*light quark", r"qcd.*multijet"],
+    "QCD_187":   [r"qcd_187"],
+    "QCD_185":   [r"qcd_185"],
 }
 
 
 def extract_predicted_class(response: str) -> str | None:
-    """Extract predicted class from model response using keyword matching."""
+    """Extract predicted class from model response using keyword matching.
+
+    Keywords are matched as case-insensitive regex patterns against the full
+    response string.  Each matching keyword adds 1 point to that class's score;
+    the class with the most points wins (ties broken by the order classes appear
+    in CLASS_KEYWORDS, which lists more-specific classes first).
+    """
     response_lower = response.lower()
 
-    # Score each class by keyword matches
-    scores = {}
+    scores: dict[str, int] = {}
     for cls, keywords in CLASS_KEYWORDS.items():
-        score = sum(1 for kw in keywords if kw.lower() in response_lower)
+        score = 0
+        for kw in keywords:
+            try:
+                if re.search(kw.lower(), response_lower):
+                    score += 1
+            except re.error:
+                # Fallback to literal substring if the pattern is invalid
+                if kw.lower() in response_lower:
+                    score += 1
         if score > 0:
             scores[cls] = score
 
     if not scores:
         return None
 
-    # Handle ambiguities (e.g., "Higgs" appears in multiple classes)
-    # Prefer more specific matches
     return max(scores, key=scores.get)
 
 

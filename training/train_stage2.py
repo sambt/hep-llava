@@ -72,6 +72,7 @@ def train_stage2(
         llm_name=config["llm"]["model_name"],
         torch_dtype=config["llm"]["torch_dtype"],
         use_flash_attention=config["llm"].get("use_flash_attention", True),
+        data_dir=data_dir,
     )
 
     # Load Stage 1 checkpoint (physics encoder + projector weights)
@@ -87,16 +88,27 @@ def train_stage2(
         print(f"WARNING: Stage 1 checkpoint not found at {stage1_checkpoint}")
         print("Training from scratch (physics encoder + projector not pretrained)")
 
-    # Apply LoRA to LLM
+    # Optionally unfreeze last N layers of OmniJet backbone for Stage 2 fine-tuning
+    encoder_cfg = config.get("physics_encoder", {})
+    if encoder_cfg.get("type") == "omnijet_foundation":
+        n_unfreeze = encoder_cfg.get("unfreeze_last_n_layers", 0)
+        if n_unfreeze > 0:
+            model.physics_encoder.unfreeze_last_n_layers(n_unfreeze)
+
+    # Apply LoRA (or DoRA) to LLM
     lora_cfg = stage2_cfg["lora"]
+    use_dora = lora_cfg.get("use_dora", False)
     lora_config = LoraConfig(
         r=lora_cfg["rank"],
         lora_alpha=lora_cfg["alpha"],
         lora_dropout=lora_cfg["dropout"],
         target_modules=lora_cfg["target_modules"],
+        use_dora=use_dora,
         bias="none",
         task_type="CAUSAL_LM",
     )
+    if use_dora:
+        print("Using DoRA (Weight-Decomposed LoRA) instead of standard LoRA.")
 
     # Enable gradient checkpointing if configured
     if stage2_cfg.get("gradient_checkpointing", True):

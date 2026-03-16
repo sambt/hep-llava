@@ -55,6 +55,11 @@ class PhysLLaVADataset(Dataset):
         # Build jet_id -> index mapping
         self.jet_id_to_idx = {j["jet_id"]: i for i, j in enumerate(jet_meta_list)}
 
+        # Build class -> integer index mapping (for contrastive loss)
+        classes = sorted({j["class"] for j in jet_meta_list})
+        self.class_to_idx: dict[str, int] = {cls: idx for idx, cls in enumerate(classes)}
+        self.jet_id_to_class: dict[str, str] = {j["jet_id"]: j["class"] for j in jet_meta_list}
+
         # Load numpy arrays for efficient access
         self.token_indices = np.load(token_indices_path)
         self.masks = np.load(masks_path)
@@ -119,12 +124,17 @@ class PhysLLaVADataset(Dataset):
                         break
                 labels[start:end] = input_ids[start:end]
 
+        # Class index for supervised contrastive loss
+        cls = self.jet_id_to_class.get(jet_id, "")
+        class_idx = self.class_to_idx.get(cls, 0)
+
         return {
             "input_ids": input_ids,
             "attention_mask": attention_mask,
             "labels": labels,
             "jet_token_indices": torch.from_numpy(jet_tokens.astype(np.int64)),
             "jet_attention_mask": torch.from_numpy(jet_mask.astype(bool)),
+            "class_idx": torch.tensor(class_idx, dtype=torch.long),
         }
 
 

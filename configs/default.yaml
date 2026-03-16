@@ -97,13 +97,18 @@ stage1:
   # Freeze: LLM, VQ-VAE tokenizer
   # Train: physics_encoder + projector
   dataloader_num_workers: 4
+  contrastive:
+    enabled: true          # supervised contrastive loss on pooled encoder features
+    weight: 0.1            # weight of contrastive loss relative to LM loss
+    temperature: 0.07      # NT-Xent temperature
+    proj_dim: 128          # contrastive projection head output dim
   early_stopping:
     enabled: true
-    patience: 5           # stop after 5 checks with no improvement
-    min_delta: 0.001      # minimum EMA loss drop to count as progress
-    check_every_n_steps: 200
-    ema_alpha: 0.05       # slow smoothing — each step contributes 5% to EMA
-    min_steps: 500        # don't check during warmup noise
+    patience: 8            # stop after 8 checks with no improvement
+    min_delta: 0.001       # minimum EMA loss drop to count as progress
+    check_every_n_steps: 500
+    ema_alpha: 0.05        # slow smoothing — each step contributes 5% to EMA
+    min_steps: 2000        # don't check during warmup noise
 
 # Training Stage 2: Instruction Tuning
 stage2:
@@ -119,16 +124,17 @@ stage2:
     rank: 32
     alpha: 64
     dropout: 0.05
+    use_dora: false        # set true to use DoRA (weight-decomposed LoRA)
     target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
   gradient_checkpointing: true
   dataloader_num_workers: 4
   early_stopping:
     enabled: true
-    patience: 5
+    patience: 8
     min_delta: 0.001
-    check_every_n_steps: 100  # Stage 2 has fewer optimizer steps (grad accum=4)
+    check_every_n_steps: 500  # Stage 2 optimizer steps (after grad accum)
     ema_alpha: 0.05
-    min_steps: 200
+    min_steps: 2000
 
 # Evaluation
 eval:

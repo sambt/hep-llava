@@ -10,6 +10,8 @@ import os
 from pathlib import Path
 
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 import yaml
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
@@ -19,6 +21,54 @@ from tqdm import tqdm
 from model.physllava import PhysLLaVA
 from training.dataset import build_stage1_dataset
 from training.early_stopping import EarlyStopper
+
+
+def supervised_contrastive_loss(
+    features: torch.Tensor,
+    labels: torch.Tensor,
+    temperature: float = 0.07,
+) -> torch.Tensor:
+    """Supervised NT-Xent contrastive loss (SupCon).
+
+    Pulls together embeddings from the same class and pushes apart
+    embeddings from different classes.  Jets of the same class are
+    positive pairs; all others are negatives.
+
+    Args:
+        features: [B, D] feature vectors (will be L2-normalised internally).
+        labels:   [B] integer class indices.
+        temperature: Temperature scaling factor (lower = sharper separation).
+
+    Returns:
+        Scalar loss.  Returns zero (differentiable) if the batch contains no
+        positive pairs (e.g., all samples are from distinct classes).
+    """
+    features = F.normalize(features, dim=1)
+    B = features.shape[0]
+
+    # Similarity matrix
+    sim = torch.matmul(features, features.T) / temperature  # [B, B]
+
+    # Mask out diagonal (self-similarity)
+    eye = torch.eye(B, device=features.device, dtype=torch.bool)
+    pos_mask = (labels.unsqueeze(0) == labels.unsqueeze(1)) & ~eye  # [B, B]
+
+    if not pos_mask.any():
+        # No positive pairs in this batch — return differentiable zero
+        return (features * 0).sum()
+
+    # Log-softmax over all non-self entries (numerically stable)
+    sim_masked = sim.masked_fill(eye, float("-inf"))
+    log_denom = torch.logsumexp(sim_masked, dim=1, keepdim=True)  # [B, 1]
+    log_prob = sim - log_denom  # [B, B]
+
+    # Average log-prob at positive positions per anchor
+    n_pos = pos_mask.float().sum(dim=1).clamp(min=1)
+    loss_per_anchor = -(log_prob * pos_mask.float()).sum(dim=1) / n_pos
+
+    # Only include anchors that have at least one positive
+    has_pos = pos_mask.any(dim=1)
+    return loss_per_anchor[has_pos].mean()
 
 
 def train_stage1(config: dict, data_dir: str, device: str = "cuda"):
@@ -67,7 +117,15 @@ def train_stage1(config: dict, data_dir: str, device: str = "cuda"):
         llm_name=config["llm"]["model_name"],
         torch_dtype=config["llm"]["torch_dtype"],
         use_flash_attention=config["llm"].get("use_flash_attention", True),
+        data_dir=data_dir,
     )
+
+    # Optionally unfreeze last N layers of OmniJet backbone
+    encoder_cfg = config.get("physics_encoder", {})
+    if encoder_cfg.get("type") == "omnijet_foundation":
+        n_unfreeze = encoder_cfg.get("unfreeze_last_n_layers", 0)
+        if n_unfreeze > 0:
+            model.physics_encoder.unfreeze_last_n_layers(n_unfreeze)
 
     # Freeze LLM for Stage 1
     model.freeze_llm()
@@ -98,8 +156,30 @@ def train_stage1(config: dict, data_dir: str, device: str = "cuda"):
         drop_last=True,
     )
 
-    # Optimizer — only trainable params
+    # Contrastive alignment setup (supervised SupCon on pooled encoder features)
+    contrast_cfg = stage1_cfg.get("contrastive", {})
+    use_contrastive = contrast_cfg.get("enabled", False)
+    contrast_weight = contrast_cfg.get("weight", 0.1)
+    contrast_temp = contrast_cfg.get("temperature", 0.07)
+    contrast_proj_dim = contrast_cfg.get("proj_dim", 128)
+
+    contrast_head: nn.Module | None = None
+    if use_contrastive:
+        encoder_dim = model.physics_encoder.hidden_dim
+        contrast_head = nn.Sequential(
+            nn.Linear(encoder_dim, encoder_dim),
+            nn.ReLU(),
+            nn.Linear(encoder_dim, contrast_proj_dim),
+        ).to(device)
+        print(
+            f"Contrastive alignment enabled: weight={contrast_weight}, "
+            f"temperature={contrast_temp}, proj_dim={contrast_proj_dim}"
+        )
+
+    # Optimizer — only trainable params (including contrastive head if enabled)
     trainable_params = [p for p in model.parameters() if p.requires_grad]
+    if contrast_head is not None:
+        trainable_params = trainable_params + list(contrast_head.parameters())
     optimizer = AdamW(
         trainable_params,
         lr=stage1_cfg["learning_rate"],
@@ -145,6 +225,24 @@ def train_stage1(config: dict, data_dir: str, device: str = "cuda"):
 
             loss = outputs.loss
 
+            # Supervised contrastive loss on mean-pooled encoder features
+            if use_contrastive and contrast_head is not None:
+                # Get encoder hidden states [B, N, D]
+                enc_out = model.physics_encoder(
+                    batch["jet_token_indices"],
+                    batch["jet_attention_mask"],
+                )
+                # Mean pool over valid tokens [B, D]
+                mask_f = batch["jet_attention_mask"].float().unsqueeze(-1)
+                pooled = (enc_out * mask_f).sum(1) / mask_f.sum(1).clamp(min=1)
+                proj = contrast_head(pooled)  # [B, proj_dim]
+                loss_c = supervised_contrastive_loss(
+                    proj, batch["class_idx"], temperature=contrast_temp
+                )
+                loss = loss + contrast_weight * loss_c
+            else:
+                loss_c = None
+
             # Backward
             loss.backward()
 
@@ -177,6 +275,8 @@ def train_stage1(config: dict, data_dir: str, device: str = "cuda"):
                 }
                 if stopper.ema is not None:
                     log_dict["stage1/loss_ema"] = stopper.ema
+                if loss_c is not None:
+                    log_dict["stage1/loss_contrastive"] = loss_c.item()
                 wandb.log(log_dict)
 
             # Save checkpoint periodically

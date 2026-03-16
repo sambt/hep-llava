@@ -73,7 +73,7 @@ projector:
 llm:
   model_name: "meta-llama/Llama-3.1-8B-Instruct"
   torch_dtype: "bfloat16"
-  use_flash_attention: false
+  use_flash_attention: true
 
 # Caption & QA generation
 captions:

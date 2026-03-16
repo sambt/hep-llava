@@ -1,12 +1,13 @@
 #!/bin/bash
 #SBATCH --partition=iaifi_gpu_priority
-#SBATCH --time=12:00:00
+#SBATCH --time=48:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:1
 #SBATCH --mem=32G
-#SBATCH --output=slurm_logs/output-%j.out
+#SBATCH --output=/n/home11/sambt/iaifi/hep-llava/slurm_logs/output-%j.out
+#SBATCH --error=/n/home11/sambt/iaifi/hep-llava/slurm_logs/error-%j.err
 
 # Usage:
 #   sbatch submit_experiment.sh --stage all [--config configs/default.yaml] [--override configs/experiments/heavy_flavor.yaml] [--classes Res2P_bb,Res2P_cc,QCD_187]
@@ -45,21 +46,23 @@ CONFIG="configs/default.yaml"
 OVERRIDE=""
 CLASSES=""
 SKIP_LLM="--skip-llm"
+SKIP_DOWNLOAD=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --stage)    STAGE="$2";    shift 2 ;;
-        --config)   CONFIG="$2";   shift 2 ;;
-        --override) OVERRIDE="$2"; shift 2 ;;
-        --classes)  CLASSES="$2";  shift 2 ;;
-        --skip-llm)    SKIP_LLM="--skip-llm";  shift ;;
-        --no-skip-llm) SKIP_LLM="";            shift ;;
+        --stage)         STAGE="$2";    shift 2 ;;
+        --config)        CONFIG="$2";   shift 2 ;;
+        --override)      OVERRIDE="$2"; shift 2 ;;
+        --classes)       CLASSES="$2";  shift 2 ;;
+        --skip-llm)      SKIP_LLM="--skip-llm";  shift ;;
+        --no-skip-llm)   SKIP_LLM="";            shift ;;
+        --skip-download) SKIP_DOWNLOAD="true";   shift ;;
         *) echo "Unknown argument: $1"; exit 1 ;;
     esac
 done
 
 # ── Environment ────────────────────────────────────────────────────────────────
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 cd "$SCRIPT_DIR"
 
 mkdir -p slurm_logs
@@ -79,6 +82,7 @@ echo "  Stage:    $STAGE"
 echo "  Config:   $CONFIG"
 echo "  Override: ${OVERRIDE:-<none>}"
 echo "  Classes:  ${CLASSES:-<from config>}"
+echo "  Skip DL:  ${SKIP_DOWNLOAD:-false}"
 echo "  Job ID:   ${SLURM_JOB_ID:-local}"
 echo "========================================"
 
@@ -123,7 +127,7 @@ run_eval() {
 
 case "$STAGE" in
     all)
-        run_download
+        [[ -z "$SKIP_DOWNLOAD" ]] && run_download
         run_tokenize
         run_captions
         run_qa
@@ -132,7 +136,7 @@ case "$STAGE" in
         run_eval
         ;;
     data)
-        run_download
+        [[ -z "$SKIP_DOWNLOAD" ]] && run_download
         run_tokenize
         run_captions
         run_qa

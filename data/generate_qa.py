@@ -13,7 +13,7 @@ from pathlib import Path
 
 import yaml
 
-from data.download_jetclass import CLASS_INFO
+from data.download_jetclass import CLASS_INFO, build_class_info
 
 
 # =============================================================================
@@ -497,6 +497,9 @@ def generate_all_qa(
     seed: int = 42,
 ) -> Path:
     """Generate QA data for all tokenized jets."""
+    global CLASS_INFO
+    CLASS_INFO = build_class_info(config["dataset"]["classes"])
+
     random.seed(seed)
 
     from scripts.config import get_paths

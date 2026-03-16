@@ -1,1 +1,4 @@
 **/__pycache__/
+.claude/
+slurm_logs/
+wandb/

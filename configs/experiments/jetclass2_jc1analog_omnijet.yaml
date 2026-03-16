@@ -1,0 +1,21 @@
+run_name: "jetclass2_jc1analog_omnijet"
+
+# JetClass-II 10-class analog mix (same as jetclass2_jc1analog) with frozen
+# OmniJet-alpha generative backbone instead of the custom physics encoder.
+dataset:
+  source: "jetclass2"
+  classes:
+    - X_bb       # label   0 — X → bb̄           (like HToBB)
+    - X_cc       # label   1 — X → cc̄           (like HToCC)
+    - X_bc       # label   4 — X → bc̄           (mixed heavy flavor)
+    - X_cs       # label   5 — X → cs̄           (charm-strange)
+    - X_gg       # label   9 — X → gg            (like HToGG)
+    - X_mm       # label  11 — X → μ⁺μ⁻         (clean leptonic)
+    - X_tauhtauh # label  14 — X → τhτh          (hadronic tau pair)
+    - X_qq       # label   3 — X → qq̄ (light)   (like WToQQ / ZToQQ)
+    - QCD_b      # label 178 — QCD (b)            (heavy-flavor QCD background)
+    - QCD_light  # label 187 — QCD multijet       (dominant QCD background)
+
+physics_encoder:
+  type: "omnijet_foundation"
+  freeze: true

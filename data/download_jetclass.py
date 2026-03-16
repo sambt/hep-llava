@@ -109,28 +109,35 @@ def _physics_for_label(label_name: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def build_class_info(class_names: list[str]) -> dict[str, dict]:
-    """Build a CLASS_INFO dict from a list of official label name strings.
+    """Build a CLASS_INFO dict from a list of label name strings.
+
+    Supports both JetClass-II labels (e.g. ``X_bb``, ``QCD_light``) and
+    JetClass-I labels (e.g. ``HToBB``, ``TTBar``).  JetClass-II names get
+    an integer ``label`` from the official index; JetClass-I names get
+    ``label: None`` since they are read from ROOT files, not parquet.
 
     Args:
-        class_names: List of official label names, e.g. ``["X_bb", "QCD_light"]``.
-            Each name must appear in ``data.jetclass_labels.label_to_idx``.
+        class_names: List of label names.
 
     Returns:
         Dict mapping class name → physics info dict with keys
         ``label``, ``particle``, ``decay``, ``process``, ``n_prongs``.
 
     Raises:
-        ValueError: If any name is not found in the official label list.
+        ValueError: If any name has no physics description in ``_LABEL_PHYSICS``
+            and cannot be derived from the name pattern.
     """
-    unknown = [n for n in class_names if n not in label_to_idx]
+    unknown = [n for n in class_names
+               if n not in label_to_idx and n not in _LABEL_PHYSICS]
     if unknown:
         raise ValueError(
             f"Unknown class name(s): {unknown}. "
             "Class names must match entries in data/jetclass_labels.py "
-            "(e.g. 'X_bb', 'X_gg', 'QCD_light', 'QCD_ss')."
+            "(e.g. 'X_bb', 'X_gg', 'QCD_light', 'QCD_ss') or JetClass-I names "
+            "(e.g. 'HToBB', 'TTBar') defined in _LABEL_PHYSICS."
         )
     return {
-        name: {"label": label_to_idx[name], **_physics_for_label(name)}
+        name: {"label": label_to_idx.get(name), **_physics_for_label(name)}
         for name in class_names
     }
 
@@ -320,8 +327,12 @@ def main() -> None:
         import yaml as _yaml
         with open(args.override) as f:
             override = _yaml.safe_load(f)
-        # Shallow-merge dataset section only (full deep-merge available in scripts.config)
-        config.update(override)
+        # Deep-merge one level: nested dicts are merged, not replaced
+        for k, v in override.items():
+            if isinstance(v, dict) and isinstance(config.get(k), dict):
+                config[k].update(v)
+            else:
+                config[k] = v
 
     data_dir = args.data_dir or config["data_dir"]
     num_jets = args.num_jets_per_class or config["dataset"]["num_jets_per_class"]
